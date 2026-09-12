@@ -1,110 +1,162 @@
-# ElevateFit — Smart Fitness & Nutrition Management System
+# ElevateFit
+**A Smart Fitness and Nutrition Management System**
 
-A premium fitness and nutrition platform: adaptive AI coaching, real-time
-pose-based form feedback, precision nutrition tracking, and performance
-analytics — designed to feel like a commercial product (Nike Training
-Club / Apple Fitness+ / WHOOP), not an AI demo.
+ElevateFit helps users track workouts, log meals, monitor progress, and get personalized fitness guidance. Built with a Next.js frontend, a FastAPI backend, and an ML module for pose detection and coaching.
+
+Frontend pages currently run on mock data; the backend auth, workout, and nutrition APIs are functional but not yet wired to the frontend.
+
+---
+
+## Features
+
+**Authentication (backend)**
+- Register, login (JWT), get current user
+- Password hashing with bcrypt
+
+**Dashboard, Workouts, Nutrition, Analytics, Settings**
+- Fully built responsive pages, currently backed by mock data
+- Workouts & nutrition also have working backend APIs (list/get/favorite workouts, log meals, view today's meals)
+
+**AI Coach** — 🚧 Planned / In Development. Page exists; backend endpoint is a placeholder, not yet functional.
+
+---
+
+## Tech Stack
+
+| Layer | Stack |
+|---|---|
+| Frontend | Next.js 14, React, TypeScript, Tailwind CSS |
+| Backend | FastAPI, Python |
+| Database | MongoDB |
+| Auth | JWT, bcrypt |
+| ML/CV | Pose detection (working demo); nutrition vision & coaching engine (scaffolds) |
+
+No AI/LLM (e.g. Gemini) integration is implemented yet.
+
+---
+
+## Architecture
+
+```
+User → Next.js Frontend → FastAPI Backend → MongoDB
+```
+
+`ml/` runs independently for now and will connect to the backend as it matures.
+
+---
+
+## Application Pages
+
+| Page | Status |
+|---|---|
+| Landing (`/`) | ✅ Completed |
+| Dashboard (`/dashboard`) | ✅ Completed |
+| Workouts (`/workouts`) | ✅ Completed |
+| Nutrition (`/nutrition`) | ✅ Completed |
+| AI Coach (`/ai-coach`) | 🚧 In Development |
+| Analytics (`/analytics`) | ✅ Completed |
+| Settings (`/settings`) | ✅ Completed |
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/auth/register` | Register a new user |
+| POST | `/auth/login` | Log in, receive JWT |
+| GET | `/auth/me` | Get current user |
+| GET | `/workouts` | List workouts |
+| GET | `/workouts/{id}` | Get a workout |
+| POST | `/workouts/{id}/favorite` | Favorite a workout |
+| POST | `/nutrition/meals` | Log a meal |
+| GET | `/nutrition/meals/today` | Get today's meals |
+| POST | `/ai-coach/message` | AI coach chat (placeholder) |
+
+Interactive docs: `http://localhost:8000/docs`
+
+---
+
+## Database
+
+MongoDB is used for persistent storage, covering users, workouts, and nutrition logs. User-specific data is scoped via the JWT issued at login.
+
+---
+
+## Project Structure
 
 ```
 ElevateFit/
-├── frontend/   Next.js 14 + TypeScript + Tailwind CSS
-├── backend/    FastAPI + MongoDB
-├── ml/         Pose detection, nutrition vision, coaching engine
+├── frontend/   # Next.js 14 + TypeScript + Tailwind CSS
+├── backend/    # FastAPI + MongoDB
+├── ml/         # Pose detection, nutrition vision, coaching engine
 └── README.md
 ```
 
-## Design system
+---
 
-| Token | Value |
-|---|---|
-| Primary — Forest Green | `#2D6A4F` |
-| Secondary — Emerald | `#40916C` |
-| Accent — Warm Gold | `#D4A373` |
-| Background (light) | `#F8F9FA` |
-| Background (dark) | `#111827` |
-| Success / Warning / Error | `#16A34A` / `#F59E0B` / `#DC2626` |
+## Installation & Setup
 
-Typography: **Poppins** for display/headings, **Inter** for body text.
-Both light and dark mode are supported app-wide (toggle in Settings or the
-top bar).
+**1. Clone**
+```bash
+git clone https://github.com/Aditipaul17/Aditi_ElevateFit-A-Smart-Fitness--and-Nutrition-Management-System.git
+cd Aditi_ElevateFit-A-Smart-Fitness--and-Nutrition-Management-System
+```
 
-## Getting started
+**2. Backend**
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
+uvicorn app.main:app --reload --port 8000
+```
 
-### 1. Frontend
+**3. Environment variables** (`.env`)
+```
+MONGODB_URI=your_mongodb_connection_string
+JWT_SECRET_KEY=your_secret
+```
 
+**4. Frontend**
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Visit `http://localhost:3000`. Pages: `/` (landing), `/dashboard`,
-`/workouts`, `/nutrition`, `/ai-coach`, `/analytics`, `/settings`.
+Visit `http://localhost:3000`.
 
-> Note: `next/font` fetches Inter and Poppins from Google Fonts at build
-> time, so an internet connection is required for `npm run build` /
-> `npm run dev` the first time.
+---
 
-The frontend currently reads from `lib/data.ts` (mock data) so it runs
-standalone without the backend. Replace those calls with `fetch()`s to
-the FastAPI endpoints below as you wire things up.
+## Authentication Flow
 
-### 2. Backend
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env              # then edit MONGODB_URI / JWT_SECRET_KEY
-uvicorn app.main:app --reload --port 8000
+```
+Register → stored in MongoDB → Login → JWT issued → protected API requests
 ```
 
-API docs available at `http://localhost:8000/docs`. Requires a running
-MongoDB instance (local, Docker, or Atlas) — set `MONGODB_URI` in `.env`.
+---
 
-Endpoints implemented:
-- `POST /auth/register`, `POST /auth/login`, `GET /auth/me`
-- `GET /workouts`, `GET /workouts/{id}`, `POST /workouts/{id}/favorite`
-- `POST /nutrition/meals`, `GET /nutrition/meals/today`
-- `POST /ai-coach/message` (placeholder — see `ml/coaching_engine`)
+## Screenshots
 
-### 3. ML
+Screenshots will be added after the final UI testing phase.
 
-```bash
-cd ml
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python pose_detection/pose_estimator.py   # webcam demo
-```
+---
 
-See `ml/README.md` for the status and integration path of each module.
+## Security
 
-## Pushing to Git
+- Bcrypt password hashing
+- JWT-based authentication
+- Secrets via environment variables (not committed)
+- User data scoped to the authenticated JWT
 
-```bash
-cd ElevateFit
-git init
-git add .
-git commit -m "Initial ElevateFit scaffold: premium redesign + backend + ml"
-git branch -M main
-git remote add origin <your-repo-url>
-git push -u origin main
-```
+---
 
-## What's implemented vs. scaffolded
+## Contributors
 
-- **Frontend:** fully built and functional against mock data — every page
-  from the brief (landing, dashboard, workouts, nutrition, AI coach,
-  analytics, settings) is real, responsive, animated code, not a stub.
-- **Backend:** working FastAPI service with real auth (JWT + bcrypt),
-  MongoDB models, and CRUD-style endpoints for workouts and nutrition.
-- **ML:** pose detection is a runnable demo; nutrition vision and the
-  coaching engine are working scaffolds meant to be extended with a
-  trained model as you collect real usage data — see `ml/README.md`.
+**Aditi Paul** — [github.com/Aditipaul17](https://github.com/Aditipaul17)
 
-Community features (feed, leaderboard, friend requests), push
-notifications, and payment/pricing integration from the original brief
-are not yet built — they're natural next additions once the core loop
-above is running end-to-end.
+## License
+
+Not specified

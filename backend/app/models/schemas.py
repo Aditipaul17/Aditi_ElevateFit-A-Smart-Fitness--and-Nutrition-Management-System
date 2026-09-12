@@ -90,5 +90,20 @@ class MealLogCreate(BaseModel):
 
 
 class CoachMessageCreate(BaseModel):
-    session_id: Optional[str] = None
+    message: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("message")
+    @classmethod
+    def message_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Message cannot be empty")
+        return v
+
+
+class ChatMessageOut(BaseModel):
+    id: str
+    role: Literal["user", "assistant"]
     message: str
+    timestamp: datetime
+

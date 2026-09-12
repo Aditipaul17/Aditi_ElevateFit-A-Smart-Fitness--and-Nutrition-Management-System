@@ -140,3 +140,49 @@ export async function updateProfile(
   }
   return body as AuthUser;
 }
+
+export type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  message: string;
+  timestamp: string;
+};
+
+export async function fetchChatHistory(token: string): Promise<ChatMessage[]> {
+  const res = await fetch(`${API_BASE_URL}/ai-coach/history`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not load chat history."), res.status);
+  }
+  return body as ChatMessage[];
+}
+
+export async function sendCoachMessage(token: string, message: string): Promise<ChatMessage> {
+  const res = await fetch(`${API_BASE_URL}/ai-coach/message`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ message }),
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Failed to send message."), res.status);
+  }
+  return body as ChatMessage;
+}
+
+export async function clearChatHistory(token: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/ai-coach/history`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await parseJsonSafe(res);
+    throw new ApiError(extractErrorMessage(body, "Could not clear chat history."), res.status);
+  }
+}
+

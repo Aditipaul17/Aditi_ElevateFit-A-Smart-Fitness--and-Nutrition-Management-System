@@ -26,11 +26,15 @@ async def today_meals(current_user: dict = Depends(get_current_user)):
         {"user_id": str(current_user["_id"]), "logged_at": {"$gte": start}}
     ).to_list(length=100)
 
+    formatted_meals = []
     totals = {"calories": 0, "protein_g": 0.0, "carbs_g": 0.0, "fat_g": 0.0}
     for meal in docs:
+        meal["_id"] = str(meal["_id"])
+        formatted_meals.append(meal)
         totals["calories"] += meal.get("calories", 0)
         totals["protein_g"] += meal.get("protein_g", 0)
         totals["carbs_g"] += meal.get("carbs_g", 0)
         totals["fat_g"] += meal.get("fat_g", 0)
 
-    return {"meals": docs, "totals": totals}
+    return {"meals": formatted_meals, "totals": totals}
+

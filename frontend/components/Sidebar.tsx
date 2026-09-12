@@ -80,9 +80,10 @@ export function Sidebar() {
       </div>
 
       <div className="flex flex-col gap-4">
-        <Link href="#" className="btn-primary w-full">
+        <Link href="/settings" className="btn-primary w-full">
           Upgrade to Pro
         </Link>
+
         <Link
           href="/settings"
           className="flex items-center gap-3 px-3 py-2 text-sm text-ink-muted hover:text-ink dark:hover:text-white transition-colors"

@@ -38,11 +38,11 @@ export function MarketingNav() {
           <ThemeToggle />
           <Link
             href="/login"
-            className="hidden sm:inline-flex text-sm font-medium text-ink-muted hover:text-primary transition-colors"
+            className="inline-flex text-xs sm:text-sm font-medium text-ink-muted hover:text-primary transition-colors"
           >
             Log In
           </Link>
-          <Link href="/signup" className="btn-primary !px-5 !py-2.5 text-sm">
+          <Link href="/signup" className="btn-primary !px-4 sm:!px-5 !py-2 sm:!py-2.5 text-xs sm:text-sm">
             Get Started
           </Link>
         </div>

@@ -52,3 +52,27 @@ async def favorite_workout(workout_id: str, current_user: dict = Depends(get_cur
         {"_id": current_user["_id"]},
         {"$addToSet": {"favorite_workout_ids": workout_id}},
     )
+
+
+@router.post("/{workout_id}/complete", status_code=status.HTTP_201_CREATED)
+async def log_completed_workout(workout_id: str, current_user: dict = Depends(get_current_user)):
+    from datetime import datetime, timezone
+    from bson import ObjectId
+    from app.database import workout_logs_collection
+
+    workout = await workouts_collection.find_one({"_id": ObjectId(workout_id)})
+    if not workout:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workout not found")
+
+    doc = {
+        "user_id": str(current_user["_id"]),
+        "workout_id": workout_id,
+        "title": workout["title"],
+        "duration_minutes": workout["duration_minutes"],
+        "calories": workout["calories"],
+        "category": workout["category"],
+        "logged_at": datetime.now(timezone.utc),
+    }
+    result = await workout_logs_collection.insert_one(doc)
+    return {"id": str(result.inserted_id), "message": "Workout logged successfully"}
+

@@ -1,9 +1,13 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import { Topbar } from "@/components/Topbar";
 import { Card } from "@/components/ui/Card";
-import { nutritionToday, meals } from "@/lib/data";
+import { meals } from "@/lib/data";
 import { motion } from "framer-motion";
+import { Plus, Loader2, Utensils, CheckCircle2, AlertCircle } from "lucide-react";
+import { useAuth } from "@/lib/AuthContext";
+import { fetchTodayMeals, logMeal, ApiError } from "@/lib/api";
 
 function Macro({
   label,
@@ -43,22 +47,118 @@ function Macro({
 }
 
 export default function NutritionPage() {
-  const caloriesPct = Math.round(
-    (nutritionToday.calories.consumed / nutritionToday.calories.goal) * 100
-  );
+  const { token } = useAuth();
+  const [loggedTotals, setLoggedTotals] = useState({
+    calories: 0,
+    protein_g: 0,
+    carbs_g: 0,
+    fat_g: 0,
+  });
+  const [loggedMeals, setLoggedMeals] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Form states
+  const [name, setName] = useState("");
+  const [calories, setCalories] = useState("");
+  const [protein, setProtein] = useState("");
+  const [carbs, setCarbs] = useState("");
+  const [fat, setFat] = useState("");
+
+  const loadMeals = useCallback(() => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    fetchTodayMeals(token)
+      .then((res) => {
+        setLoggedMeals(res.meals || []);
+        setLoggedTotals({
+          calories: res.totals?.calories || 0,
+          protein_g: Math.round(res.totals?.protein_g || 0),
+          carbs_g: Math.round(res.totals?.carbs_g || 0),
+          fat_g: Math.round(res.totals?.fat_g || 0),
+        });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  useEffect(() => {
+    loadMeals();
+  }, [loadMeals]);
+
+
+  const handleLogMeal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !calories || !token) return;
+
+    setSubmitting(true);
+    setErrorMsg(null);
+    try {
+      await logMeal(token, {
+        name: name.trim(),
+        calories: parseInt(calories, 10) || 0,
+        protein_g: parseFloat(protein) || 0,
+        carbs_g: parseFloat(carbs) || 0,
+        fat_g: parseFloat(fat) || 0,
+      });
+
+      setSuccessMsg("Meal logged successfully!");
+      setName("");
+      setCalories("");
+      setProtein("");
+      setCarbs("");
+      setFat("");
+      setShowModal(false);
+      loadMeals();
+
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setErrorMsg(err.message);
+      } else {
+        setErrorMsg("Could not log meal. Please try again.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const calorieGoal = 2400;
+  const totalCalories = loggedTotals.calories;
+  const caloriesPct = Math.min(100, Math.round((totalCalories / calorieGoal) * 100));
 
   return (
     <>
       <Topbar placeholder="Search foods, recipes, or meals..." />
       <main className="px-6 lg:px-10 py-8 space-y-8">
-        <div>
-          <h1 className="text-3xl font-display font-bold text-ink dark:text-white">
-            Nutrition
-          </h1>
-          <p className="text-ink-muted mt-1">
-            Track today&apos;s intake and stay aligned with your goals.
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-display font-bold text-ink dark:text-white">
+              Nutrition
+            </h1>
+            <p className="text-ink-muted mt-1">
+              Track today&apos;s intake and stay aligned with your goals.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-2 rounded-xl bg-primary text-white px-4 py-2.5 text-sm font-semibold hover:bg-secondary transition-colors"
+          >
+            <Plus size={18} /> Log Meal
+          </button>
         </div>
+
+        {successMsg && (
+          <div className="flex items-center gap-2 rounded-xl bg-accent/10 text-accent text-sm px-4 py-3 border border-accent/20">
+            <CheckCircle2 size={18} />
+            <span>{successMsg}</span>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <Card className="flex flex-col items-center text-center gap-3">
@@ -67,7 +167,15 @@ export default function NutritionPage() {
             </p>
             <div className="relative h-32 w-32">
               <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
-                <circle cx="60" cy="60" r="52" fill="none" stroke="currentColor" strokeWidth="10" className="text-black/5 dark:text-white/10" />
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="52"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="10"
+                  className="text-black/5 dark:text-white/10"
+                />
                 <circle
                   cx="60"
                   cy="60"
@@ -82,27 +190,53 @@ export default function NutritionPage() {
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-2xl font-display font-bold text-ink dark:text-white">
-                  {nutritionToday.calories.consumed}
+                  {totalCalories}
                 </span>
                 <span className="text-[11px] text-ink-muted">
-                  of {nutritionToday.calories.goal} kcal
+                  of {calorieGoal} kcal
                 </span>
               </div>
             </div>
           </Card>
 
           <Card className="lg:col-span-2 flex flex-col justify-center gap-5">
-            <Macro label="Protein" consumed={nutritionToday.protein.consumed} goal={nutritionToday.protein.goal} unit="g" color="#2D6A4F" />
-            <Macro label="Carbs" consumed={nutritionToday.carbs.consumed} goal={nutritionToday.carbs.goal} unit="g" color="#40916C" />
-            <Macro label="Fat" consumed={nutritionToday.fat.consumed} goal={nutritionToday.fat.goal} unit="g" color="#D4A373" />
-            <Macro label="Fiber" consumed={nutritionToday.fiber.consumed} goal={nutritionToday.fiber.goal} unit="g" color="#16A34A" />
-            <Macro label="Water" consumed={nutritionToday.water.consumed} goal={nutritionToday.water.goal} unit="L" color="#3B82F6" />
+            <Macro label="Protein" consumed={loggedTotals.protein_g} goal={160} unit="g" color="#2D6A4F" />
+            <Macro label="Carbs" consumed={loggedTotals.carbs_g} goal={250} unit="g" color="#40916C" />
+            <Macro label="Fat" consumed={loggedTotals.fat_g} goal={70} unit="g" color="#D4A373" />
           </Card>
         </div>
 
+        {/* Logged Meals & Recipes */}
         <Card>
           <h2 className="text-lg font-display font-semibold text-ink dark:text-white mb-4">
-            Meal Planner
+            Today&apos;s Logged Meals ({loggedMeals.length})
+          </h2>
+
+          {loggedMeals.length === 0 ? (
+            <p className="text-sm text-ink-muted">
+              No meals logged today yet. Click &quot;Log Meal&quot; above to start tracking!
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+              {loggedMeals.map((m, idx) => (
+                <div
+                  key={m._id || idx}
+                  className="rounded-xl border border-black/10 dark:border-white/10 p-4 bg-black/5 dark:bg-white/5"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="font-semibold text-ink dark:text-white">{m.name}</h3>
+                    <span className="text-sm font-semibold text-primary">{m.calories} kcal</span>
+                  </div>
+                  <p className="text-xs text-ink-muted">
+                    P: {m.protein_g}g • C: {m.carbs_g}g • F: {m.fat_g}g
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <h2 className="text-lg font-display font-semibold text-ink dark:text-white mt-6 mb-4">
+            Recommended Meal Plans
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {meals.map((meal) => (
@@ -121,6 +255,100 @@ export default function NutritionPage() {
           </div>
         </Card>
       </main>
+
+      {/* Log Meal Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="surface-card w-full max-w-md rounded-2xl p-6 shadow-xl border border-black/10 dark:border-white/10">
+            <h3 className="text-lg font-bold text-ink dark:text-white mb-4">Log Today&apos;s Meal</h3>
+
+            {errorMsg && (
+              <div className="mb-4 flex items-center gap-2 text-xs text-error bg-error/10 p-3 rounded-xl">
+                <AlertCircle size={15} /> {errorMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleLogMeal} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-ink dark:text-white mb-1">Meal Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Grilled Chicken Bowl"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-ink dark:text-white mb-1">Calories (kcal)</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="650"
+                    value={calories}
+                    onChange={(e) => setCalories(e.target.value)}
+                    className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-ink dark:text-white mb-1">Protein (g)</label>
+                  <input
+                    type="number"
+                    placeholder="45"
+                    value={protein}
+                    onChange={(e) => setProtein(e.target.value)}
+                    className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-ink dark:text-white mb-1">Carbs (g)</label>
+                  <input
+                    type="number"
+                    placeholder="50"
+                    value={carbs}
+                    onChange={(e) => setCarbs(e.target.value)}
+                    className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-ink dark:text-white mb-1">Fat (g)</label>
+                  <input
+                    type="number"
+                    placeholder="18"
+                    value={fat}
+                    onChange={(e) => setFat(e.target.value)}
+                    className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="rounded-xl border border-black/10 dark:border-white/10 px-4 py-2 text-sm text-ink-muted hover:text-ink transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="rounded-xl bg-primary text-white px-5 py-2 text-sm font-semibold hover:bg-secondary transition-colors disabled:opacity-60 flex items-center gap-1.5"
+                >
+                  {submitting && <Loader2 size={15} className="animate-spin" />}
+                  {submitting ? "Saving..." : "Save Meal"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

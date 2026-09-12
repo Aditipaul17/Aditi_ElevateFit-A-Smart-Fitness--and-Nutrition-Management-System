@@ -1,34 +1,40 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   Plus,
   Utensils,
   Ruler,
-  Share2,
-  LifeBuoy,
+  Bot,
   TrendingUp,
   Activity,
   Dumbbell,
+  Clock,
+  Sparkles,
 } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { Card } from "@/components/ui/Card";
 import { WeeklyActivityChart } from "@/components/WeeklyActivityChart";
 import { useAuth } from "@/lib/AuthContext";
+import { AnalyticsSummary, fetchAnalytics } from "@/lib/api";
 
 const quickActions = [
-  { label: "Log Workout", icon: Plus },
-  { label: "Track Meal", icon: Utensils },
-  { label: "Body Metrics", icon: Ruler },
-  { label: "Challenge", icon: Share2 },
-  { label: "SOS Support", icon: LifeBuoy },
+  { label: "Log Workout", icon: Plus, href: "/workouts" },
+  { label: "Track Meal", icon: Utensils, href: "/nutrition" },
+  { label: "Body Metrics", icon: Ruler, href: "/settings" },
+  { label: "AI Coach", icon: Bot, href: "/ai-coach" },
+  { label: "Analytics", icon: TrendingUp, href: "/analytics" },
 ];
 
-function EmptyStat({
+function StatItem({
+  value,
   label,
   icon: Icon,
   colorClass,
 }: {
+  value: string | number;
   label: string;
   icon: React.ElementType;
   colorClass: string;
@@ -41,8 +47,8 @@ function EmptyStat({
         <Icon size={20} />
       </span>
       <div>
-        <p className="text-lg font-display font-semibold text-ink-muted dark:text-white/40">
-          —
+        <p className="text-xl font-display font-bold text-ink dark:text-white">
+          {value}
         </p>
         <p className="text-sm text-ink-muted">{label}</p>
       </div>
@@ -51,12 +57,18 @@ function EmptyStat({
 }
 
 export default function DashboardPage() {
-  const { user, isLoading } = useAuth();
+  const { user, token, isLoading } = useAuth();
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
 
   const firstName = user?.name?.split(" ")[0] ?? "Athlete";
-
-  // Check if profile is complete enough to show a personalised message
   const hasGoal = Boolean(user?.fitness_goal);
+
+  useEffect(() => {
+    if (!token) return;
+    fetchAnalytics(token)
+      .then((data) => setAnalytics(data))
+      .catch(() => {});
+  }, [token]);
 
   return (
     <>
@@ -86,7 +98,7 @@ export default function DashboardPage() {
 
         {/* Stats row */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-          {/* Profile completion card (replaces fake fitness score) */}
+          {/* Profile completion card */}
           <Card className="md:col-span-1 flex flex-col items-center justify-center text-center gap-3">
             <p className="text-xs font-semibold tracking-wide uppercase text-ink-muted">
               Profile
@@ -150,8 +162,8 @@ export default function DashboardPage() {
                       </div>
                       <p className="text-sm text-ink-muted">
                         {pct < 100
-                          ? "Fill in your profile to unlock personalised coaching."
-                          : "Your profile is complete!"}
+                          ? "Fill in your profile in Settings to unlock custom coaching."
+                          : "Your profile is 100% complete!"}
                       </p>
                     </>
                   );
@@ -160,27 +172,31 @@ export default function DashboardPage() {
             )}
           </Card>
 
-          {/* No-data stat cards — real data available once workout/nutrition is wired */}
+          {/* Real data stat cards */}
           <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <EmptyStat
-              label="Calories Burned"
-              icon={Activity}
+            <StatItem
+              value={analytics ? `${analytics.total_meals_logged} Meals` : "0 Meals"}
+              label="Logged Intake"
+              icon={Utensils}
               colorClass="bg-primary/10 text-primary"
             />
-            <EmptyStat
-              label="Active Minutes"
-              icon={TrendingUp}
+            <StatItem
+              value={analytics ? `${analytics.total_workout_minutes} min` : "0 min"}
+              label="Active Duration"
+              icon={Clock}
               colorClass="bg-secondary/10 text-secondary"
             />
-            <EmptyStat
-              label="Workouts This Week"
+            <StatItem
+              value={analytics ? `${analytics.avg_workout_frequency} / wk` : "0 / wk"}
+              label="Workout Frequency"
               icon={Dumbbell}
               colorClass="bg-accent/15 text-accent"
             />
-            <EmptyStat
-              label="Day Streak"
+            <StatItem
+              value={analytics ? `${analytics.goal_progress_pct}%` : "0%"}
+              label="Goal Progress"
               icon={Activity}
-              colorClass="bg-error/10 text-error"
+              colorClass="bg-primary/10 text-primary"
             />
           </div>
         </div>
@@ -194,40 +210,31 @@ export default function DashboardPage() {
                   Weekly Activity
                 </h2>
                 <p className="text-xs text-ink-muted mt-0.5">
-                  Sample data — connect workouts to see your real activity
+                  Daily calorie intake logged over the past 7 days
                 </p>
               </div>
-              <div className="flex gap-2 text-xs font-semibold">
-                <button className="rounded-full bg-primary/10 text-primary px-3 py-1.5">
-                  Week
-                </button>
-                <button className="rounded-full text-ink-muted px-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/5">
-                  Month
-                </button>
-              </div>
             </div>
-            <WeeklyActivityChart />
+            <WeeklyActivityChart data={analytics?.weekly_calories} />
           </Card>
 
           <Card className="flex flex-col gap-4 overflow-hidden relative">
             <span className="inline-flex w-fit items-center gap-1 rounded-full bg-primary text-white text-[11px] font-semibold px-3 py-1">
-              Coming Soon
+              <Sparkles size={12} /> AI Pick
             </span>
             <h3 className="text-lg font-display font-semibold text-ink dark:text-white">
-              AI Workout Pick
+              AI Workout Recommendation
             </h3>
-            <p className="text-sm text-ink-muted">
-              Your personalised workout recommendation will appear here once
-              the AI Coach is connected.
+            <p className="text-sm text-ink-muted leading-relaxed">
+              Ask your AI Coach for a tailored training program tuned specifically to your goals and equipment.
             </p>
             <div className="flex items-center justify-between mt-auto pt-2">
-              <span className="text-sm text-ink-muted">—</span>
-              <button
-                disabled
-                className="btn-primary !px-5 !py-2.5 text-sm opacity-40 cursor-not-allowed"
+              <span className="text-sm text-ink-muted font-medium">Ready when you are</span>
+              <Link
+                href="/ai-coach"
+                className="btn-primary !px-5 !py-2.5 text-sm"
               >
-                Start
-              </button>
+                Chat Coach
+              </Link>
             </div>
           </Card>
         </div>
@@ -238,16 +245,17 @@ export default function DashboardPage() {
             Quick Actions
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-            {quickActions.map(({ label, icon: Icon }) => (
-              <button
+            {quickActions.map(({ label, icon: Icon, href }) => (
+              <Link
                 key={label}
+                href={href}
                 className="flex flex-col items-center justify-center gap-2 rounded-xl border border-black/5 dark:border-white/10 py-6 hover:border-primary hover:bg-primary/5 transition-colors"
               >
                 <Icon size={20} className="text-primary" />
                 <span className="text-sm font-medium text-ink dark:text-white">
                   {label}
                 </span>
-              </button>
+              </Link>
             ))}
           </div>
         </Card>
@@ -255,3 +263,4 @@ export default function DashboardPage() {
     </>
   );
 }
+

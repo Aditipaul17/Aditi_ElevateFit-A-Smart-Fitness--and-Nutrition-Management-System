@@ -9,3 +9,5 @@ users_collection = db["users"]
 workouts_collection = db["workouts"]
 meals_collection = db["meals"]
 sessions_collection = db["ai_coach_sessions"]
+workout_logs_collection = db["workout_logs"]
+

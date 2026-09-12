@@ -126,10 +126,18 @@ async def update_current_user(
 ):
     updates = {k: v for k, v in payload.model_dump(exclude_unset=True).items()}
     if updates:
-        updates["updated_at"] = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        updates["updated_at"] = now
+        mongo_update: dict = {"$set": updates}
+        if "weight" in updates and updates["weight"] is not None:
+            date_str = now.strftime("%b %d")
+            mongo_update["$push"] = {
+                "weight_history": {"weight": updates["weight"], "date": date_str}
+            }
         await users_collection.update_one(
             {"_id": current_user["_id"]},
-            {"$set": updates},
+            mongo_update,
         )
     refreshed = await users_collection.find_one({"_id": current_user["_id"]})
     return _serialize_user(refreshed)
+

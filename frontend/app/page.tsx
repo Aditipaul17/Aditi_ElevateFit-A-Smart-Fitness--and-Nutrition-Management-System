@@ -75,7 +75,7 @@ export default function LandingPage() {
               ElevateFit combines adaptive coaching, precision nutrition, and real-time form feedback in one calm, focused platform.
             </p>
             <div className="mt-8 flex flex-wrap gap-4">
-              <Link href="/dashboard" className="btn-primary">
+              <Link href="/signup" className="btn-primary">
                 Get Started <ArrowRight size={16} />
               </Link>
               <a href="#features" className="btn-secondary">
@@ -193,7 +193,7 @@ export default function LandingPage() {
             Join athletes who train with a coach that actually adapts to them.
           </p>
           <Link
-            href="/dashboard"
+            href="/signup"
             className="mt-8 inline-flex items-center gap-2 rounded-full bg-white text-primary font-semibold px-7 py-3 relative z-10 hover:bg-surface transition-colors"
           >
             Get Started Free <ArrowRight size={16} />

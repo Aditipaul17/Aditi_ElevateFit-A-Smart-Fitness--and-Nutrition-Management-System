@@ -1,8 +1,10 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { Card } from "@/components/ui/Card";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { useAuth } from "@/lib/AuthContext";
 
 const rows = [
   { label: "Notifications", desc: "Workout reminders, meal reminders, and achievements" },
@@ -13,11 +15,26 @@ const rows = [
 ];
 
 export default function SettingsPage() {
+  const router = useRouter();
+  const { user, logout } = useAuth();
+
+  function handleLogout() {
+    logout();
+    router.push("/login");
+  }
+
   return (
     <>
       <Topbar placeholder="Search settings..." />
       <main className="px-6 lg:px-10 py-8 space-y-6 max-w-3xl">
         <h1 className="text-3xl font-display font-bold text-ink dark:text-white">Settings</h1>
+
+        <Card className="flex items-center justify-between">
+          <div>
+            <p className="font-semibold text-ink dark:text-white">{user?.name}</p>
+            <p className="text-sm text-ink-muted">{user?.email}</p>
+          </div>
+        </Card>
 
         <Card className="flex items-center justify-between">
           <div>
@@ -41,7 +58,7 @@ export default function SettingsPage() {
           ))}
         </Card>
 
-        <button className="text-error text-sm font-semibold hover:underline">
+        <button onClick={handleLogout} className="text-error text-sm font-semibold hover:underline">
           Log Out
         </button>
       </main>

@@ -107,3 +107,36 @@ export async function fetchCurrentUser(token: string): Promise<AuthUser> {
   }
   return body as AuthUser;
 }
+
+/** Fields the user may update — mirrors the backend's UserProfileUpdate schema. */
+export type ProfileUpdatePayload = {
+  name?: string;
+  age?: number | null;
+  gender?: string | null;
+  height?: number | null;
+  weight?: number | null;
+  fitness_goal?: string | null;
+  activity_level?: string | null;
+  dietary_preference?: string | null;
+  workout_experience?: string | null;
+  equipment?: string[] | null;
+};
+
+export async function updateProfile(
+  token: string,
+  payload: ProfileUpdatePayload
+): Promise<AuthUser> {
+  const res = await fetch(`${API_BASE_URL}/auth/me`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not save your profile."), res.status);
+  }
+  return body as AuthUser;
+}

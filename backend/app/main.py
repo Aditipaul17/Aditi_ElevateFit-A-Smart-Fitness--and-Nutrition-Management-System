@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.database import users_collection
-from app.routers import ai_coach, analytics, auth, nutrition, workouts
+from app.routers import ai_coach, analytics, auth, gamification, nutrition, workouts
 
 app = FastAPI(title=settings.app_name)
 
@@ -20,6 +20,8 @@ app.include_router(workouts.router)
 app.include_router(nutrition.router)
 app.include_router(ai_coach.router)
 app.include_router(analytics.router)
+app.include_router(gamification.router)
+
 
 
 

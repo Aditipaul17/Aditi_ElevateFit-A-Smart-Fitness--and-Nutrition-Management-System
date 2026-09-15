@@ -11,6 +11,39 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    Object.setPrototypeOf(this, ApiError.prototype);
+  }
+}
+
+export function getErrorMessage(err: unknown, fallback = "Something went wrong. Please try again."): string {
+  if (err instanceof ApiError) return err.message;
+  if (err && typeof err === "object") {
+    if ("name" in err && (err as { name: unknown }).name === "ApiError" && "message" in err) {
+      return String((err as { message: unknown }).message);
+    }
+    if ("message" in err && typeof (err as { message: unknown }).message === "string") {
+      const msg = (err as { message: string }).message;
+      if (msg === "Failed to fetch" || msg.toLowerCase().includes("fetch")) {
+        return `Unable to connect to the backend server (${API_BASE_URL}). Please make sure the backend is running.`;
+      }
+      return msg;
+    }
+  }
+  return fallback;
+}
+
+/** Wrapper around standard fetch that converts network/connection failures to ApiErrors. */
+async function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (err) {
+    if (err instanceof TypeError || (err && typeof err === "object" && "message" in err && String((err as any).message).includes("fetch"))) {
+      throw new ApiError(
+        `Unable to connect to the backend server (${API_BASE_URL}). Please make sure the backend server is running.`,
+        0
+      );
+    }
+    throw err;
   }
 }
 
@@ -68,7 +101,7 @@ async function parseJsonSafe(response: Response): Promise<unknown> {
 }
 
 export async function signup(payload: SignupPayload): Promise<Token> {
-  const res = await fetch(`${API_BASE_URL}/auth/register`, {
+  const res = await safeFetch(`${API_BASE_URL}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -85,7 +118,7 @@ export async function login(email: string, password: string): Promise<Token> {
   form.set("username", email);
   form.set("password", password);
 
-  const res = await fetch(`${API_BASE_URL}/auth/login`, {
+  const res = await safeFetch(`${API_BASE_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form.toString(),
@@ -98,7 +131,7 @@ export async function login(email: string, password: string): Promise<Token> {
 }
 
 export async function fetchCurrentUser(token: string): Promise<AuthUser> {
-  const res = await fetch(`${API_BASE_URL}/auth/me`, {
+  const res = await safeFetch(`${API_BASE_URL}/auth/me`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const body = await parseJsonSafe(res);
@@ -126,7 +159,7 @@ export async function updateProfile(
   token: string,
   payload: ProfileUpdatePayload
 ): Promise<AuthUser> {
-  const res = await fetch(`${API_BASE_URL}/auth/me`, {
+  const res = await safeFetch(`${API_BASE_URL}/auth/me`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -149,7 +182,7 @@ export type ChatMessage = {
 };
 
 export async function fetchChatHistory(token: string): Promise<ChatMessage[]> {
-  const res = await fetch(`${API_BASE_URL}/ai-coach/history`, {
+  const res = await safeFetch(`${API_BASE_URL}/ai-coach/history`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const body = await parseJsonSafe(res);
@@ -160,7 +193,7 @@ export async function fetchChatHistory(token: string): Promise<ChatMessage[]> {
 }
 
 export async function sendCoachMessage(token: string, message: string): Promise<ChatMessage> {
-  const res = await fetch(`${API_BASE_URL}/ai-coach/message`, {
+  const res = await safeFetch(`${API_BASE_URL}/ai-coach/message`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -176,7 +209,7 @@ export async function sendCoachMessage(token: string, message: string): Promise<
 }
 
 export async function clearChatHistory(token: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/ai-coach/history`, {
+  const res = await safeFetch(`${API_BASE_URL}/ai-coach/history`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -209,7 +242,7 @@ export type AnalyticsSummary = {
 };
 
 export async function fetchAnalytics(token: string): Promise<AnalyticsSummary> {
-  const res = await fetch(`${API_BASE_URL}/analytics/summary`, {
+  const res = await safeFetch(`${API_BASE_URL}/analytics/summary`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const body = await parseJsonSafe(res);
@@ -227,8 +260,8 @@ export type MealLogPayload = {
   fat_g: number;
 };
 
-export async function logMeal(token: string, payload: MealLogPayload): Promise<{ id: string }> {
-  const res = await fetch(`${API_BASE_URL}/nutrition/meals`, {
+export async function logMeal(token: string, payload: MealLogPayload): Promise<{ id: string; gamification?: ActivityRewardResponse }> {
+  const res = await safeFetch(`${API_BASE_URL}/nutrition/meals`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -240,14 +273,14 @@ export async function logMeal(token: string, payload: MealLogPayload): Promise<{
   if (!res.ok) {
     throw new ApiError(extractErrorMessage(body, "Could not log meal."), res.status);
   }
-  return body as { id: string };
+  return body as { id: string; gamification?: ActivityRewardResponse };
 }
 
 export async function fetchTodayMeals(token: string): Promise<{
   meals: any[];
   totals: { calories: number; protein_g: number; carbs_g: number; fat_g: number };
 }> {
-  const res = await fetch(`${API_BASE_URL}/nutrition/meals/today`, {
+  const res = await safeFetch(`${API_BASE_URL}/nutrition/meals/today`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const body = await parseJsonSafe(res);
@@ -262,7 +295,7 @@ export async function fetchWorkouts(category?: string): Promise<any[]> {
   if (category && category !== "All Workouts") {
     url.searchParams.set("category", category);
   }
-  const res = await fetch(url.toString());
+  const res = await safeFetch(url.toString());
   const body = await parseJsonSafe(res);
   if (!res.ok) {
     throw new ApiError(extractErrorMessage(body, "Could not load workouts."), res.status);
@@ -271,7 +304,7 @@ export async function fetchWorkouts(category?: string): Promise<any[]> {
 }
 
 export async function favoriteWorkout(token: string, workoutId: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/workouts/${workoutId}/favorite`, {
+  const res = await safeFetch(`${API_BASE_URL}/workouts/${workoutId}/favorite`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -281,8 +314,8 @@ export async function favoriteWorkout(token: string, workoutId: string): Promise
   }
 }
 
-export async function completeWorkout(token: string, workoutId: string): Promise<{ id: string }> {
-  const res = await fetch(`${API_BASE_URL}/workouts/${workoutId}/complete`, {
+export async function completeWorkout(token: string, workoutId: string): Promise<{ id: string; gamification?: ActivityRewardResponse }> {
+  const res = await safeFetch(`${API_BASE_URL}/workouts/${workoutId}/complete`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -290,8 +323,76 @@ export async function completeWorkout(token: string, workoutId: string): Promise
   if (!res.ok) {
     throw new ApiError(extractErrorMessage(body, "Could not log workout session."), res.status);
   }
-  return body as { id: string };
+  return body as { id: string; gamification?: ActivityRewardResponse };
 }
+
+export type Badge = {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  unlocked: boolean;
+  unlocked_at?: string | null;
+};
+
+export type GamificationData = {
+  total_xp: number;
+  level: number;
+  xp_in_level: number;
+  xp_needed_for_next: number;
+  next_level_xp: number;
+  progress_pct: number;
+  current_streak: number;
+  longest_streak: number;
+  badges_earned_count: number;
+  total_badges_count: number;
+  badges: Badge[];
+  workouts_completed_count: number;
+  meals_logged_count: number;
+  last_activity_date?: string | null;
+};
+
+export type ActivityRewardResponse = {
+  xp_gained: number;
+  total_xp: number;
+  level: number;
+  leveled_up: boolean;
+  current_streak: number;
+  longest_streak: number;
+  new_badges: Badge[];
+  message: string;
+};
+
+export async function fetchGamification(token: string): Promise<GamificationData> {
+  const res = await safeFetch(`${API_BASE_URL}/gamification`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not load gamification data."), res.status);
+  }
+  return body as GamificationData;
+}
+
+export async function recordGamificationActivity(
+  token: string,
+  activityType: "workout" | "meal" | "daily_checkin"
+): Promise<ActivityRewardResponse> {
+  const res = await safeFetch(`${API_BASE_URL}/gamification/activity`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ activity_type: activityType }),
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not record activity."), res.status);
+  }
+  return body as ActivityRewardResponse;
+}
+
 
 
 

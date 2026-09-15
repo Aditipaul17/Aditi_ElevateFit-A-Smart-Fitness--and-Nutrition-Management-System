@@ -13,6 +13,7 @@ import {
   completeWorkout,
   ApiError,
 } from "@/lib/api";
+import { GamificationToastBanner, GamificationToastItem } from "@/components/GamificationToast";
 
 const FILTERS = [
   "All Workouts",
@@ -24,13 +25,36 @@ const FILTERS = [
 ] as const;
 
 export default function WorkoutsPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [active, setActive] = useState<(typeof FILTERS)[number]>("All Workouts");
   const [items, setItems] = useState<WorkoutItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  
+  // Gamification Toasts
+  const [gamiToasts, setGamiToasts] = useState<GamificationToastItem[]>([]);
+
+  useEffect(() => {
+    if (user?.id) {
+      const stored = localStorage.getItem(`ef_${user.id}_completedWorkouts`);
+      if (stored) {
+        try {
+          setCompletedIds(JSON.parse(stored));
+        } catch (e) {}
+      }
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (gamiToasts.length > 0) {
+      const timer = setTimeout(() => {
+        setGamiToasts((prev) => prev.slice(1));
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [gamiToasts]);
 
   useEffect(() => {
     setLoading(true);
@@ -39,19 +63,12 @@ export default function WorkoutsPage() {
         if (Array.isArray(data) && data.length > 0) {
           setItems(data);
         } else {
-          // Fallback to static workouts filtered by category
-          const filtered =
-            active === "All Workouts"
-              ? fallbackWorkouts
-              : fallbackWorkouts.filter((w) => w.category === active);
+          const filtered = active === "All Workouts" ? fallbackWorkouts : fallbackWorkouts.filter((w) => w.category === active);
           setItems(filtered);
         }
       })
       .catch(() => {
-        const filtered =
-          active === "All Workouts"
-            ? fallbackWorkouts
-            : fallbackWorkouts.filter((w) => w.category === active);
+        const filtered = active === "All Workouts" ? fallbackWorkouts : fallbackWorkouts.filter((w) => w.category === active);
         setItems(filtered);
       })
       .finally(() => setLoading(false));
@@ -60,11 +77,8 @@ export default function WorkoutsPage() {
   const handleSave = async (workoutId: string) => {
     if (savedIds.includes(workoutId)) return;
     setSavedIds((prev) => [...prev, workoutId]);
-
     if (token) {
-      try {
-        await favoriteWorkout(token, workoutId);
-      } catch {}
+      try { await favoriteWorkout(token, workoutId); } catch {}
     }
     setToastMsg("Workout saved to your favorites!");
     setTimeout(() => setToastMsg(null), 3000);
@@ -72,23 +86,46 @@ export default function WorkoutsPage() {
 
   const handleComplete = async (workoutId: string) => {
     if (completedIds.includes(workoutId)) return;
-    setCompletedIds((prev) => [...prev, workoutId]);
+    
+    const newCompleted = [...completedIds, workoutId];
+    setCompletedIds(newCompleted);
+    if (user?.id) {
+      localStorage.setItem(`ef_${user.id}_completedWorkouts`, JSON.stringify(newCompleted));
+    }
 
     if (token) {
       try {
-        await completeWorkout(token, workoutId);
+        const res = await completeWorkout(token, workoutId);
+        if (res.gamification) {
+          const newToasts: GamificationToastItem[] = [];
+          if (res.gamification.xp_gained > 0) {
+            newToasts.push({ id: Math.random().toString(), type: "xp", title: `+${res.gamification.xp_gained} XP 🎉`, description: "Workout completed!" });
+          }
+          if (res.gamification.leveled_up) {
+            newToasts.push({ id: Math.random().toString(), type: "level", title: "Level Up! \ud83d\ude80", description: `You reached Level ${res.gamification.level}` });
+          }
+          if (res.gamification.new_badges && res.gamification.new_badges.length > 0) {
+            res.gamification.new_badges.forEach(b => {
+              newToasts.push({ id: Math.random().toString(), type: "badge", title: "New Badge Unlocked! 🏆", description: b.name });
+            });
+          }
+          setGamiToasts(prev => [...prev, ...newToasts]);
+        }
       } catch (err) {
         if (err instanceof ApiError) {
           setToastMsg(err.message);
         }
       }
     }
-    setToastMsg("Workout session logged! Check your Analytics dashboard.");
-    setTimeout(() => setToastMsg(null), 3500);
+    if (gamiToasts.length === 0) {
+        setToastMsg("Workout session logged! Check your Analytics dashboard.");
+        setTimeout(() => setToastMsg(null), 3500);
+    }
   };
 
   return (
     <>
+      <GamificationToastBanner toast={gamiToasts[0] || null} onClose={() => setGamiToasts(prev => prev.slice(1))} />
       <Topbar placeholder="Search workouts by name, trainer, or muscle group..." />
       <main className="px-6 lg:px-10 py-8 space-y-8">
         <div className="flex items-center justify-between">
@@ -102,7 +139,7 @@ export default function WorkoutsPage() {
           </div>
         </div>
 
-        {toastMsg && (
+        {toastMsg && gamiToasts.length === 0 && (
           <div className="flex items-center gap-2 rounded-xl bg-accent/10 text-accent text-sm px-4 py-3 border border-accent/20">
             <CheckCircle2 size={18} />
             <span>{toastMsg}</span>

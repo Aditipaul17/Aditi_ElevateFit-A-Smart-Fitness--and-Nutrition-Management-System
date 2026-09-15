@@ -59,6 +59,7 @@ async def log_completed_workout(workout_id: str, current_user: dict = Depends(ge
     from datetime import datetime, timezone
     from bson import ObjectId
     from app.database import workout_logs_collection
+    from app.routers.gamification import process_user_activity
 
     workout = await workouts_collection.find_one({"_id": ObjectId(workout_id)})
     if not workout:
@@ -74,5 +75,13 @@ async def log_completed_workout(workout_id: str, current_user: dict = Depends(ge
         "logged_at": datetime.now(timezone.utc),
     }
     result = await workout_logs_collection.insert_one(doc)
-    return {"id": str(result.inserted_id), "message": "Workout logged successfully"}
+
+    gamification_res = await process_user_activity(str(current_user["_id"]), "workout")
+
+    return {
+        "id": str(result.inserted_id),
+        "message": "Workout logged successfully",
+        "gamification": gamification_res.model_dump(),
+    }
+
 

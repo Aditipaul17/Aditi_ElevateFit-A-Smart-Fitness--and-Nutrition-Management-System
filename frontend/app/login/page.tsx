@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, AlertCircle } from "lucide-react";
 import { AuthShell } from "@/components/AuthShell";
 import { useAuth } from "@/lib/AuthContext";
-import { ApiError } from "@/lib/api";
+import { ApiError, getErrorMessage } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,11 +38,7 @@ export default function LoginPage() {
       await login(email.trim(), password);
       router.push("/dashboard");
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
-      } else {
-        setError("Something went wrong. Please try again.");
-      }
+      setError(getErrorMessage(err, "Invalid email or password."));
     } finally {
       setSubmitting(false);
     }

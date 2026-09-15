@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 import { Plus, Loader2, Utensils, CheckCircle2, AlertCircle } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { fetchTodayMeals, logMeal, ApiError } from "@/lib/api";
+import { GamificationToastBanner, GamificationToastItem } from "@/components/GamificationToast";
 
 function Macro({
   label,
@@ -60,6 +61,18 @@ export default function NutritionPage() {
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  // Gamification Toasts
+  const [gamiToasts, setGamiToasts] = useState<GamificationToastItem[]>([]);
+
+  useEffect(() => {
+    if (gamiToasts.length > 0) {
+      const timer = setTimeout(() => {
+        setGamiToasts((prev) => prev.slice(1));
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [gamiToasts]);
 
   // Form states
   const [name, setName] = useState("");
@@ -95,17 +108,45 @@ export default function NutritionPage() {
   const handleLogMeal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !calories || !token) return;
+    
+    const mealName = name.trim();
+    const mealCals = parseInt(calories, 10) || 0;
+    
+    // Prevent duplicates
+    const isDuplicate = loggedMeals.some(
+      (m) => m.name.toLowerCase() === mealName.toLowerCase() && m.calories === mealCals
+    );
+    if (isDuplicate) {
+      setErrorMsg("You have already logged this meal today.");
+      return;
+    }
 
     setSubmitting(true);
     setErrorMsg(null);
     try {
-      await logMeal(token, {
-        name: name.trim(),
-        calories: parseInt(calories, 10) || 0,
+      const res = await logMeal(token, {
+        name: mealName,
+        calories: mealCals,
         protein_g: parseFloat(protein) || 0,
         carbs_g: parseFloat(carbs) || 0,
         fat_g: parseFloat(fat) || 0,
       });
+
+      if (res.gamification) {
+          const newToasts: GamificationToastItem[] = [];
+          if (res.gamification.xp_gained > 0) {
+            newToasts.push({ id: Math.random().toString(), type: "xp", title: `+${res.gamification.xp_gained} XP 🎉`, description: "Meal logged!" });
+          }
+          if (res.gamification.leveled_up) {
+            newToasts.push({ id: Math.random().toString(), type: "level", title: "Level Up! 🚀", description: `You reached Level ${res.gamification.level}` });
+          }
+          if (res.gamification.new_badges && res.gamification.new_badges.length > 0) {
+            res.gamification.new_badges.forEach(b => {
+              newToasts.push({ id: Math.random().toString(), type: "badge", title: "New Badge Unlocked! 🏆", description: b.name });
+            });
+          }
+          setGamiToasts(prev => [...prev, ...newToasts]);
+      }
 
       setSuccessMsg("Meal logged successfully!");
       setName("");
@@ -134,6 +175,7 @@ export default function NutritionPage() {
 
   return (
     <>
+      <GamificationToastBanner toast={gamiToasts[0] || null} onClose={() => setGamiToasts(prev => prev.slice(1))} />
       <Topbar placeholder="Search foods, recipes, or meals..." />
       <main className="px-6 lg:px-10 py-8 space-y-8">
         <div className="flex flex-wrap items-center justify-between gap-4">

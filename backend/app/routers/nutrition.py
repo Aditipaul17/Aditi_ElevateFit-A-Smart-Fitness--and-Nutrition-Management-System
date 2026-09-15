@@ -11,10 +11,19 @@ router = APIRouter(prefix="/nutrition", tags=["nutrition"])
 
 @router.post("/meals", status_code=201)
 async def log_meal(payload: MealLogCreate, current_user: dict = Depends(get_current_user)):
+    from app.routers.gamification import process_user_activity
+
     doc = payload.model_dump()
     doc["user_id"] = str(current_user["_id"])
     result = await meals_collection.insert_one(doc)
-    return {"id": str(result.inserted_id)}
+
+    gamification_res = await process_user_activity(str(current_user["_id"]), "meal")
+
+    return {
+        "id": str(result.inserted_id),
+        "gamification": gamification_res.model_dump(),
+    }
+
 
 
 @router.get("/meals/today")

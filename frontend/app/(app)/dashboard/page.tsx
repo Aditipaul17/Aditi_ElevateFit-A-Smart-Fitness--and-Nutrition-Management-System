@@ -17,8 +17,9 @@ import {
 import { Topbar } from "@/components/Topbar";
 import { Card } from "@/components/ui/Card";
 import { WeeklyActivityChart } from "@/components/WeeklyActivityChart";
+import { GamificationCard } from "@/components/GamificationCard";
 import { useAuth } from "@/lib/AuthContext";
-import { AnalyticsSummary, fetchAnalytics } from "@/lib/api";
+import { AnalyticsSummary, fetchAnalytics, fetchGamification, GamificationData } from "@/lib/api";
 
 const quickActions = [
   { label: "Log Workout", icon: Plus, href: "/workouts" },
@@ -59,15 +60,25 @@ function StatItem({
 export default function DashboardPage() {
   const { user, token, isLoading } = useAuth();
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [gamification, setGamification] = useState<GamificationData | null>(null);
+  const [gamificationLoading, setGamificationLoading] = useState(true);
 
   const firstName = user?.name?.split(" ")[0] ?? "Athlete";
   const hasGoal = Boolean(user?.fitness_goal);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setGamificationLoading(false);
+      return;
+    }
     fetchAnalytics(token)
       .then((data) => setAnalytics(data))
       .catch(() => {});
+
+    fetchGamification(token)
+      .then((data) => setGamification(data))
+      .catch(() => {})
+      .finally(() => setGamificationLoading(false));
   }, [token]);
 
   return (
@@ -200,6 +211,9 @@ export default function DashboardPage() {
             />
           </div>
         </div>
+
+        {/* Gamification Card */}
+        <GamificationCard data={gamification} isLoading={gamificationLoading} />
 
         {/* Weekly Activity + AI Pick row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

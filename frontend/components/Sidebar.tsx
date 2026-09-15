@@ -8,6 +8,7 @@ import {
   UtensilsCrossed,
   BotMessageSquare,
   LineChart,
+  Trophy,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -19,6 +20,7 @@ const NAV_ITEMS = [
   { href: "/workouts", label: "Workouts", icon: Dumbbell },
   { href: "/nutrition", label: "Nutrition", icon: UtensilsCrossed },
   { href: "/ai-coach", label: "AI Coach", icon: BotMessageSquare },
+  { href: "/gamification", label: "Gamification", icon: Trophy },
   { href: "/analytics", label: "Analytics", icon: LineChart },
 ];
 

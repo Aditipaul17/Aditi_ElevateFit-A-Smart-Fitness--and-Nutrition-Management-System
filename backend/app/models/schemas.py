@@ -107,3 +107,45 @@ class ChatMessageOut(BaseModel):
     message: str
     timestamp: datetime
 
+
+class BadgeOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    icon: str
+    unlocked: bool
+    unlocked_at: Optional[datetime] = None
+
+
+class GamificationOut(BaseModel):
+    total_xp: int
+    level: int
+    xp_in_level: int
+    xp_needed_for_next: int
+    next_level_xp: int
+    progress_pct: float
+    current_streak: int
+    longest_streak: int
+    badges_earned_count: int
+    total_badges_count: int
+    badges: list[BadgeOut]
+    workouts_completed_count: int
+    meals_logged_count: int
+    last_activity_date: Optional[str] = None
+
+
+class ActivityRequest(BaseModel):
+    activity_type: Literal["workout", "meal", "daily_checkin"]
+
+
+class ActivityResponse(BaseModel):
+    xp_gained: int
+    total_xp: int
+    level: int
+    leveled_up: bool
+    current_streak: int
+    longest_streak: int
+    new_badges: list[BadgeOut]
+    message: str
+
+

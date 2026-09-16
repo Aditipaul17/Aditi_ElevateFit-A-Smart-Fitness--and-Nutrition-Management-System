@@ -9,7 +9,58 @@ logger = logging.getLogger(__name__)
 
 
 def is_gemini_configured() -> bool:
-    return bool(settings.gemini_api_key and settings.gemini_api_key.strip())
+    key = (settings.gemini_api_key or settings.groq_api_key or "").strip()
+    return bool(key)
+
+
+async def _generate_groq_response(
+    api_key: str,
+    system_instruction: str,
+    user_prompt: str,
+    chat_history: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    import json
+    import urllib.request
+    import asyncio
+
+    messages = [{"role": "system", "content": system_instruction}]
+    if chat_history:
+        for msg in chat_history[-10:]:
+            role = "user" if msg.get("role") == "user" else "assistant"
+            text = msg.get("message", "")
+            if text:
+                messages.append({"role": role, "content": text})
+
+    messages.append({"role": "user", "content": user_prompt})
+
+    def _call_groq(model_name: str):
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 1024,
+        }
+        req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data["choices"][0]["message"]["content"]
+
+    try:
+        return await asyncio.to_thread(_call_groq, "llama-3.3-70b-versatile")
+    except Exception:
+        try:
+            return await asyncio.to_thread(_call_groq, "llama3-70b-8192")
+        except Exception as exc:
+            logger.error(f"Groq API call failed: {exc}")
+            raise RuntimeError(f"AI Coach (Groq) error: {str(exc)}") from exc
 
 
 async def generate_coaching_response(
@@ -17,11 +68,11 @@ async def generate_coaching_response(
     user_profile: Dict[str, Any],
     chat_history: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
-    """Generates a personalized AI fitness & nutrition response using Google Gemini."""
-    api_key = settings.gemini_api_key.strip() if settings.gemini_api_key else ""
+    """Generates a personalized AI fitness & nutrition response using Gemini or Groq."""
+    api_key = (settings.gemini_api_key or settings.groq_api_key or "").strip()
     if not api_key:
         raise ValueError(
-            "Gemini API key is not configured. Please set GEMINI_API_KEY in backend/.env"
+            "API key is not configured. Please set GEMINI_API_KEY in backend/.env"
         )
 
     # Formulate personalized system instruction using stored athlete profile
@@ -70,9 +121,18 @@ async def generate_coaching_response(
         "- Keep responses well-structured with clear bullet points or numbered sections."
     )
 
+    # Route to Groq if key starts with gsk_
+    if api_key.startswith("gsk_"):
+        return await _generate_groq_response(
+            api_key=api_key,
+            system_instruction=system_instruction,
+            user_prompt=user_prompt,
+            chat_history=chat_history,
+        )
+
+    # Otherwise route to Google Gemini
     client = genai.Client(api_key=api_key)
 
-    # Format recent chat history (up to last 10 messages) as context
     contents: List[Any] = []
     if chat_history:
         for msg in chat_history[-10:]:
@@ -106,3 +166,4 @@ async def generate_coaching_response(
     except Exception as exc:
         logger.error(f"Gemini API call failed: {exc}")
         raise RuntimeError(f"Gemini API error: {str(exc)}") from exc
+

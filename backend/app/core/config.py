@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24  # 24 hours
 
     gemini_api_key: str = ""
+    groq_api_key: str = ""
+
 
     cors_origins: list[str] = [
         "http://localhost:3000",

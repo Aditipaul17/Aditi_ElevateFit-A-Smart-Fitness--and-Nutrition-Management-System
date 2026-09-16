@@ -15,6 +15,7 @@ export type WorkoutItem = {
   trainer: string;
   image_url?: string;
   image?: string;
+  recommendation_reason?: string;
 };
 
 export function WorkoutCard({
@@ -80,6 +81,11 @@ export function WorkoutCard({
           )}
         </div>
         <div className="p-5">
+          {workout.recommendation_reason && (
+            <div className="mb-2 inline-flex items-center gap-1 rounded-md bg-primary/10 text-primary px-2.5 py-0.5 text-[11px] font-semibold tracking-wide">
+              <span>✨ {workout.recommendation_reason}</span>
+            </div>
+          )}
           <h3 className="font-display font-semibold text-ink dark:text-white leading-snug mb-2">
             {workout.title}
           </h3>
@@ -97,6 +103,7 @@ export function WorkoutCard({
           </div>
         </div>
       </div>
+
 
       {onComplete && (
         <div className="px-5 pb-5 pt-0">

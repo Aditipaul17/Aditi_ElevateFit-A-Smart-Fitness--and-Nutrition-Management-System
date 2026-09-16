@@ -78,6 +78,9 @@ class WorkoutOut(BaseModel):
     trainer: str
     target_muscles: list[str]
     image_url: str
+    recommendation_reason: Optional[str] = None
+    match_score: Optional[float] = None
+
 
 
 class MealLogCreate(BaseModel):

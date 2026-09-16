@@ -303,6 +303,18 @@ export async function fetchWorkouts(category?: string): Promise<any[]> {
   return body as any[];
 }
 
+export async function fetchRecommendedWorkouts(token: string): Promise<any[]> {
+  const res = await safeFetch(`${API_BASE_URL}/workouts/recommendations`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not load recommendations."), res.status);
+  }
+  return body as any[];
+}
+
+
 export async function favoriteWorkout(token: string, workoutId: string): Promise<void> {
   const res = await safeFetch(`${API_BASE_URL}/workouts/${workoutId}/favorite`, {
     method: "POST",

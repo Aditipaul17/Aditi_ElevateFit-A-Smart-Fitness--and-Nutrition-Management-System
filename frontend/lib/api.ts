@@ -76,6 +76,11 @@ export type AuthUser = {
   dietary_preference?: string | null;
   workout_experience?: string | null;
   equipment?: string[] | null;
+  preferred_workout_type?: string | null;
+  available_workout_time?: string | null;
+  food_preferences?: string[] | null;
+  fitness_limitations?: string[] | null;
+  onboarding_completed?: boolean | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -153,6 +158,11 @@ export type ProfileUpdatePayload = {
   dietary_preference?: string | null;
   workout_experience?: string | null;
   equipment?: string[] | null;
+  preferred_workout_type?: string | null;
+  available_workout_time?: string | null;
+  food_preferences?: string[] | null;
+  fitness_limitations?: string[] | null;
+  onboarding_completed?: boolean | null;
 };
 
 export async function updateProfile(
@@ -290,6 +300,64 @@ export async function fetchTodayMeals(token: string): Promise<{
   return body as any;
 }
 
+export type NutritionTargets = {
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+};
+
+export type MealRecommendation = {
+  id: string;
+  name: string;
+  time: string;
+  items: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+};
+
+export type NutritionRecommendationsResponse = {
+  targets: NutritionTargets;
+  recommended_meals: MealRecommendation[];
+};
+
+export type FoodItem = {
+  name: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  dietary_tags: string[];
+};
+
+export async function fetchNutritionRecommendations(
+  token: string
+): Promise<NutritionRecommendationsResponse> {
+  const res = await safeFetch(`${API_BASE_URL}/nutrition/recommendations`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not load nutrition recommendations."), res.status);
+  }
+  return body as NutritionRecommendationsResponse;
+}
+
+export async function searchFoods(token: string, query: string): Promise<FoodItem[]> {
+  const url = new URL(`${API_BASE_URL}/nutrition/search`);
+  if (query) url.searchParams.set("q", query);
+  const res = await safeFetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not search foods."), res.status);
+  }
+  return body as FoodItem[];
+}
+
 export async function fetchWorkouts(category?: string): Promise<any[]> {
   const url = new URL(`${API_BASE_URL}/workouts`);
   if (category && category !== "All Workouts") {
@@ -404,6 +472,34 @@ export async function recordGamificationActivity(
   }
   return body as ActivityRewardResponse;
 }
+
+export async function logSteps(token: string, steps: number): Promise<{ total_steps_today: number }> {
+  const res = await safeFetch(`${API_BASE_URL}/workouts/steps`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ steps }),
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not log steps."), res.status);
+  }
+  return body as { total_steps_today: number };
+}
+
+export async function fetchTodaySteps(token: string): Promise<{ steps: number; goal: number }> {
+  const res = await safeFetch(`${API_BASE_URL}/workouts/steps/today`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not load today's steps."), res.status);
+  }
+  return body as { steps: number; goal: number };
+}
+
 
 
 

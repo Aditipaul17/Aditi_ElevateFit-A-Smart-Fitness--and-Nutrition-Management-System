@@ -32,9 +32,15 @@ def _serialize_user(user: dict) -> UserOut:
         dietary_preference=user.get("dietary_preference"),
         workout_experience=user.get("workout_experience"),
         equipment=user.get("equipment"),
+        preferred_workout_type=user.get("preferred_workout_type"),
+        available_workout_time=user.get("available_workout_time"),
+        food_preferences=user.get("food_preferences"),
+        fitness_limitations=user.get("fitness_limitations"),
+        onboarding_completed=user.get("onboarding_completed", False),
         created_at=user.get("created_at"),
         updated_at=user.get("updated_at"),
     )
+
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
@@ -85,6 +91,11 @@ async def register(payload: UserCreate):
         "dietary_preference": None,
         "workout_experience": None,
         "equipment": None,
+        "preferred_workout_type": None,
+        "available_workout_time": None,
+        "food_preferences": None,
+        "fitness_limitations": None,
+        "onboarding_completed": False,
         "created_at": now,
         "updated_at": now,
     }

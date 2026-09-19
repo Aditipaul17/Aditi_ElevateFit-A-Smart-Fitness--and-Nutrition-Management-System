@@ -43,6 +43,11 @@ class UserProfileUpdate(BaseModel):
     dietary_preference: Optional[str] = None
     workout_experience: Optional[str] = None
     equipment: Optional[list[str]] = None
+    preferred_workout_type: Optional[str] = None
+    available_workout_time: Optional[str] = None
+    food_preferences: Optional[list[str]] = None
+    fitness_limitations: Optional[list[str]] = None
+    onboarding_completed: Optional[bool] = None
 
 
 class UserOut(BaseModel):
@@ -58,8 +63,26 @@ class UserOut(BaseModel):
     dietary_preference: Optional[str] = None
     workout_experience: Optional[str] = None
     equipment: Optional[list[str]] = None
+    preferred_workout_type: Optional[str] = None
+    available_workout_time: Optional[str] = None
+    food_preferences: Optional[list[str]] = None
+    fitness_limitations: Optional[list[str]] = None
+    onboarding_completed: Optional[bool] = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class StepLogCreate(BaseModel):
+    steps: int = Field(gt=0, le=200000)
+    date: Optional[str] = None
+
+
+class StepLogOut(BaseModel):
+    id: str
+    user_id: str
+    steps: int
+    date: str
+    logged_at: datetime
 
 
 class Token(BaseModel):
@@ -81,6 +104,38 @@ class WorkoutOut(BaseModel):
     recommendation_reason: Optional[str] = None
     match_score: Optional[float] = None
 
+
+
+class NutritionTargetsOut(BaseModel):
+    calories: int
+    protein_g: int
+    carbs_g: int
+    fat_g: int
+
+
+class MealRecommendationOut(BaseModel):
+    id: str
+    name: str
+    time: str
+    items: str
+    calories: int
+    protein_g: int
+    carbs_g: int
+    fat_g: int
+
+
+class NutritionRecommendationsResponse(BaseModel):
+    targets: NutritionTargetsOut
+    recommended_meals: list[MealRecommendationOut]
+
+
+class FoodItemOut(BaseModel):
+    name: str
+    calories: int
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    dietary_tags: list[str] = []
 
 
 class MealLogCreate(BaseModel):

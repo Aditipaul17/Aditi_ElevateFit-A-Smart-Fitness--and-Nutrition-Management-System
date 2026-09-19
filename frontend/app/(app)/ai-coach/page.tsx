@@ -81,15 +81,23 @@ export default function AiCoachPage() {
     setLastFailedPrompt(null);
     setInputMessage("");
 
-    // Optimistically push user message to UI
-    const tempUserMsg: ChatMessage = {
-      id: `temp-${Date.now()}`,
-      role: "user",
-      message: prompt,
-      timestamp: new Date().toISOString(),
-    };
+    // Prevent duplicate user message bubble on Retry
+    setMessages((prev) => {
+      const lastMsg = prev[prev.length - 1];
+      if (lastMsg && lastMsg.role === "user" && lastMsg.message === prompt) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          id: `temp-${Date.now()}`,
+          role: "user",
+          message: prompt,
+          timestamp: new Date().toISOString(),
+        },
+      ];
+    });
 
-    setMessages((prev) => [...prev, tempUserMsg]);
     setSending(true);
 
     try {
@@ -100,12 +108,13 @@ export default function AiCoachPage() {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError("Could not reach AI Coach. Please try again.");
+        setError("AI Coach is temporarily unavailable. Please try again.");
       }
     } finally {
       setSending(false);
     }
   }
+
 
   async function handleClearHistory() {
     if (!token || sending) return;

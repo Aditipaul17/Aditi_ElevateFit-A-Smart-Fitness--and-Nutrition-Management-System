@@ -92,10 +92,65 @@ def calculate_recommendation_score(workout: dict, user_profile: dict, completed_
         score += 20
         reasons.append("Complements your fitness goal")
 
-    # 3. Activity Level
-    act = (user_profile.get("activity_level") or "Lightly active").lower()
-    duration = workout.get("duration_minutes", 30)
+    # 3. Preferred Workout Type
+    pref_type = (user_profile.get("preferred_workout_type") or "").lower().strip()
+    if pref_type and pref_type in cat.lower():
+        score += 25
+        reasons.append(f"Matches preferred {cat}")
 
+    # 4. Available Workout Time
+    time_pref = user_profile.get("available_workout_time") or ""
+    duration = workout.get("duration_minutes", 30)
+    if "15-30" in time_pref:
+        if duration <= 30:
+            score += 20
+            reasons.append("Fits 30-min available time")
+        else:
+            score -= 20
+    elif "30-45" in time_pref:
+        if 20 <= duration <= 45:
+            score += 20
+            reasons.append("Fits 45-min available time")
+    elif "45-60" in time_pref:
+        if 35 <= duration <= 60:
+            score += 20
+            reasons.append("Fits 60-min session length")
+
+    # 5. Equipment & Location compatibility
+    user_eq = user_profile.get("equipment") or []
+    loc = workout.get("location", "Home")
+    if isinstance(user_eq, list) and ("No equipment" in user_eq or len(user_eq) == 0):
+        if loc == "Home":
+            score += 20
+            reasons.append("Suitable for home setup")
+        elif loc == "Gym":
+            score -= 20
+
+    # 6. Fitness Limitations (Safety Filters)
+    limitations = user_profile.get("fitness_limitations") or []
+    if isinstance(limitations, str):
+        limitations = [limitations]
+    
+    for limit in limitations:
+        limit_str = limit.lower()
+        if "joint" in limit_str or "knee" in limit_str or "low impact" in limit_str:
+            if cat in ["Yoga", "Stretching"] or (loc == "Home" and difficulty == "Beginner" and cat != "HIIT"):
+                score += 35
+                reasons.append("Joint-friendly & low impact")
+            elif cat == "HIIT" or difficulty in ["Advanced", "Elite"]:
+                score -= 50
+        elif "back" in limit_str:
+            if cat in ["Yoga", "Stretching"]:
+                score += 30
+                reasons.append("Supports back mobility")
+            elif difficulty in ["Advanced", "Elite"]:
+                score -= 30
+        elif "asthma" in limit_str or "breathing" in limit_str:
+            if cat == "HIIT" and difficulty != "Beginner":
+                score -= 30
+
+    # 7. Activity Level
+    act = (user_profile.get("activity_level") or "Lightly active").lower()
     if "sedentary" in act:
         if cat in ["Yoga", "Stretching"] or (difficulty == "Beginner" and duration <= 30):
             score += 25
@@ -117,7 +172,7 @@ def calculate_recommendation_score(workout: dict, user_profile: dict, completed_
             score += 20
             reasons.append("Matches your high activity level")
 
-    # 4. Age Safety Adjustment
+    # 8. Age Safety Adjustment
     age = user_profile.get("age")
     if age and isinstance(age, (int, float)):
         if age >= 50:
@@ -127,7 +182,7 @@ def calculate_recommendation_score(workout: dict, user_profile: dict, completed_
             elif difficulty in ["Advanced", "Elite"] or cat == "HIIT":
                 score -= 35
 
-    # 5. Height / Weight (BMI Estimation)
+    # 9. Height / Weight (BMI Estimation)
     h = user_profile.get("height")
     w = user_profile.get("weight")
     if h and w and h > 0 and w > 0:
@@ -140,7 +195,7 @@ def calculate_recommendation_score(workout: dict, user_profile: dict, completed_
             elif cat == "HIIT" and difficulty != "Beginner":
                 score -= 15
 
-    # 6. Completed Workouts Deprioritization
+    # 10. Completed Workouts Deprioritization
     workout_id_str = str(workout.get("_id", workout.get("id", "")))
     if workout_id_str in completed_workout_ids:
         score -= 25
@@ -244,5 +299,53 @@ async def log_completed_workout(workout_id: str, current_user: dict = Depends(ge
         "message": "Workout logged successfully",
         "gamification": gamification_res.model_dump(),
     }
+
+
+@router.post("/steps", status_code=status.HTTP_201_CREATED)
+async def log_steps(payload: dict, current_user: dict = Depends(get_current_user)):
+    from datetime import datetime, timezone
+    from app.database import step_logs_collection
+
+    steps_val = int(payload.get("steps", 0))
+    if steps_val <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Steps must be greater than 0")
+
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    user_id_str = str(current_user["_id"])
+
+    # Upsert or increment today's step count
+    existing = await step_logs_collection.find_one({"user_id": user_id_str, "date": today_str})
+    if existing:
+        new_total = existing.get("steps", 0) + steps_val
+        await step_logs_collection.update_one(
+            {"_id": existing["_id"]},
+            {"$set": {"steps": new_total, "updated_at": datetime.now(timezone.utc)}},
+        )
+        total_steps = new_total
+    else:
+        doc = {
+            "user_id": user_id_str,
+            "steps": steps_val,
+            "date": today_str,
+            "logged_at": datetime.now(timezone.utc),
+        }
+        await step_logs_collection.insert_one(doc)
+        total_steps = steps_val
+
+    return {"message": "Steps logged successfully", "total_steps_today": total_steps, "date": today_str}
+
+
+@router.get("/steps/today")
+async def get_today_steps(current_user: dict = Depends(get_current_user)):
+    from datetime import datetime, timezone
+    from app.database import step_logs_collection
+
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    user_id_str = str(current_user["_id"])
+
+    existing = await step_logs_collection.find_one({"user_id": user_id_str, "date": today_str})
+    steps = existing.get("steps", 0) if existing else 0
+    return {"steps": steps, "goal": 10000, "date": today_str}
+
 
 

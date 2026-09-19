@@ -53,14 +53,17 @@ async def _generate_groq_response(
             data = json.loads(resp.read().decode("utf-8"))
             return data["choices"][0]["message"]["content"]
 
-    try:
-        return await asyncio.to_thread(_call_groq, "llama-3.3-70b-versatile")
-    except Exception:
+    models_to_try = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
+    last_err = None
+    for model in models_to_try:
         try:
-            return await asyncio.to_thread(_call_groq, "llama3-70b-8192")
+            return await asyncio.to_thread(_call_groq, model)
         except Exception as exc:
-            logger.error(f"Groq API call failed: {exc}")
-            raise RuntimeError(f"AI Coach (Groq) error: {str(exc)}") from exc
+            last_err = exc
+            logger.warning(f"Groq model {model} call failed: {exc}")
+
+    logger.error(f"Groq API call failed across all models: {last_err}", exc_info=True)
+    raise RuntimeError(f"Groq API error: {str(last_err)}") from last_err
 
 
 async def generate_coaching_response(
@@ -72,7 +75,7 @@ async def generate_coaching_response(
     api_key = (settings.gemini_api_key or settings.groq_api_key or "").strip()
     if not api_key:
         raise ValueError(
-            "API key is not configured. Please set GEMINI_API_KEY in backend/.env"
+            "Gemini API key is not configured. Please set GEMINI_API_KEY in backend/.env"
         )
 
     # Formulate personalized system instruction using stored athlete profile
@@ -103,21 +106,60 @@ async def generate_coaching_response(
         )
         profile_items.append(f"Available Equipment: {eq}")
 
+    if user_profile.get("preferred_workout_type"):
+        profile_items.append(f"Preferred Workout Type: {user_profile['preferred_workout_type']}")
+    if user_profile.get("available_workout_time"):
+        profile_items.append(f"Available Workout Time: {user_profile['available_workout_time']}")
+    if user_profile.get("food_preferences"):
+        fp = (
+            ", ".join(user_profile["food_preferences"])
+            if isinstance(user_profile["food_preferences"], list)
+            else str(user_profile["food_preferences"])
+        )
+        profile_items.append(f"Food Preferences & Allergies: {fp}")
+    if user_profile.get("fitness_limitations"):
+        lim = (
+            ", ".join(user_profile["fitness_limitations"])
+            if isinstance(user_profile["fitness_limitations"], list)
+            else str(user_profile["fitness_limitations"])
+        )
+        profile_items.append(f"Fitness Limitations / Injuries: {lim}")
+
     bio_summary = (
         "\n".join(f"- {item}" for item in profile_items)
         if profile_items
         else "- Profile details not fully set."
     )
 
+    dietary_pref_rule = ""
+    diet_val = (user_profile.get("dietary_preference") or "").lower()
+    if "vegetarian" in diet_val and "non" not in diet_val:
+        dietary_pref_rule = "\n- STRICT DIETARY REQUIREMENT: The athlete is VEGETARIAN. You must NEVER suggest chicken, meat, beef, pork, fish, seafood, or eggs under any circumstances. Only suggest vegetarian foods like paneer, tofu, lentils, beans, yogurt, nuts, seeds, fruits, and vegetables."
+    elif "vegan" in diet_val:
+        dietary_pref_rule = "\n- STRICT DIETARY REQUIREMENT: The athlete is VEGAN. You must NEVER suggest any animal products, including meat, chicken, fish, eggs, dairy, paneer, yogurt, cheese, or honey. Only suggest 100% plant-based foods."
+    elif diet_val and "no preference" not in diet_val:
+        dietary_pref_rule = f"\n- STRICT DIETARY REQUIREMENT: The athlete follows a '{user_profile['dietary_preference']}' diet. Respect this dietary restriction strictly in all meal suggestions."
+
+    food_prefs_val = user_profile.get("food_preferences")
+    if food_prefs_val:
+        fp_str = ", ".join(food_prefs_val) if isinstance(food_prefs_val, list) else str(food_prefs_val)
+        dietary_pref_rule += f"\n- FOOD PREFERENCES & ALLERGIES: Strictly respect the following allergies/preferences: {fp_str}. Do NOT recommend foods containing these allergens."
+
+    limits_val = user_profile.get("fitness_limitations")
+    if limits_val:
+        lim_str = ", ".join(limits_val) if isinstance(limits_val, list) else str(limits_val)
+        dietary_pref_rule += f"\n- SAFETY & PHYSICAL LIMITATIONS: The athlete has the following limitations/injuries: {lim_str}. Avoid high-risk or aggravating exercises and offer low-impact or safe modifications."
+
     system_instruction = (
         "You are ElevateFit AI Coach, an elite, encouraging, and scientific personal fitness and nutrition coach.\n"
         "Provide clear, actionable, and personalized advice on workout programming, exercise technique, nutrition, macros, and recovery.\n"
-        "Tailor your recommendation directly to the athlete's body metrics, goals, and equipment preferences.\n\n"
+        "Tailor your recommendation directly to the athlete's body metrics, goals, physical limitations, and equipment preferences.\n\n"
         f"ATHLETE PROFILE:\n{bio_summary}\n\n"
         "Guidelines:\n"
         "- Be highly motivating, precise, and practical.\n"
         "- When providing workouts, specify exercise names, sets, reps, and target muscle groups.\n"
-        "- When providing meal suggestions, include realistic ingredients and approximate calories/protein.\n"
+        "- When providing meal suggestions, include realistic ingredients and approximate calories/protein."
+        f"{dietary_pref_rule}\n"
         "- Keep responses well-structured with clear bullet points or numbered sections."
     )
 
@@ -130,40 +172,49 @@ async def generate_coaching_response(
             chat_history=chat_history,
         )
 
-    # Otherwise route to Google Gemini
-    client = genai.Client(api_key=api_key)
-
-    contents: List[Any] = []
-    if chat_history:
-        for msg in chat_history[-10:]:
-            role = "user" if msg.get("role") == "user" else "model"
-            text = msg.get("message", "")
-            if text:
-                contents.append(
-                    types.Content(role=role, parts=[types.Part.from_text(text=text)])
-                )
-
-    contents.append(
-        types.Content(role="user", parts=[types.Part.from_text(text=user_prompt)])
-    )
-
-    config = types.GenerateContentConfig(
-        system_instruction=system_instruction,
-        temperature=0.7,
-        max_output_tokens=1024,
-    )
-
+    # Otherwise route to Google Gemini SDK
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=contents,
-            config=config,
+        client = genai.Client(api_key=api_key)
+
+        contents: List[Any] = []
+        if chat_history:
+            for msg in chat_history[-10:]:
+                role = "user" if msg.get("role") == "user" else "model"
+                text = msg.get("message", "")
+                if text:
+                    contents.append(
+                        types.Content(role=role, parts=[types.Part.from_text(text=text)])
+                    )
+
+        contents.append(
+            types.Content(role="user", parts=[types.Part.from_text(text=user_prompt)])
         )
 
-        if not response.text:
-            raise RuntimeError("Gemini returned an empty response.")
-        return response.text.strip()
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            temperature=0.7,
+            max_output_tokens=1024,
+        )
+
+        # Try gemini-2.0-flash first, then gemini-1.5-flash
+        models = ["gemini-2.0-flash", "gemini-1.5-flash"]
+        last_exc = None
+        for m in models:
+            try:
+                response = client.models.generate_content(
+                    model=m,
+                    contents=contents,
+                    config=config,
+                )
+                if response and response.text:
+                    return response.text.strip()
+            except Exception as e:
+                last_exc = e
+                logger.warning(f"Gemini model {m} call failed: {e}")
+
+        raise last_exc or RuntimeError("Gemini returned an empty response.")
     except Exception as exc:
-        logger.error(f"Gemini API call failed: {exc}")
+        logger.error(f"Gemini API call failed: {exc}", exc_info=True)
         raise RuntimeError(f"Gemini API error: {str(exc)}") from exc
+
 

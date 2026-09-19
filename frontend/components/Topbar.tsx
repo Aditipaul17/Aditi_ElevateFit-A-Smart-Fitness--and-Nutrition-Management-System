@@ -3,7 +3,15 @@
 import { Search, Bell } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-export function Topbar({ placeholder = "Search workouts, trainers, or goals..." }: { placeholder?: string }) {
+export function Topbar({
+  placeholder = "Search workouts, trainers, or goals...",
+  searchValue = "",
+  onSearchChange,
+}: {
+  placeholder?: string;
+  searchValue?: string;
+  onSearchChange?: (val: string) => void;
+}) {
   return (
     <header className="flex items-center gap-4 px-6 lg:px-10 py-5 border-b border-black/5 dark:border-white/5 bg-surface/80 dark:bg-surface-dark/80 backdrop-blur-sm sticky top-0 z-10">
       <div className="relative flex-1 max-w-md">
@@ -13,6 +21,8 @@ export function Topbar({ placeholder = "Search workouts, trainers, or goals..." 
         />
         <input
           type="text"
+          value={searchValue}
+          onChange={(e) => onSearchChange?.(e.target.value)}
           placeholder={placeholder}
           className="w-full rounded-full bg-white dark:bg-card-dark border border-black/5 dark:border-white/10 pl-10 pr-4 py-2.5 text-sm text-ink dark:text-white placeholder:text-ink-muted focus:border-primary outline-none transition-colors"
         />

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 from typing import List
 
 from bson import ObjectId
@@ -9,7 +10,10 @@ from app.models.schemas import ChatMessageOut, CoachMessageCreate
 from app.routers.auth import get_current_user
 from app.services.gemini import generate_coaching_response, is_gemini_configured
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/ai-coach", tags=["ai-coach"])
+
 
 
 @router.get("/history", response_model=List[ChatMessageOut])
@@ -67,6 +71,7 @@ async def send_message(
     insert_res = await sessions_collection.insert_one(user_msg_doc)
 
     # 3. Call Gemini API service with user profile and chat history
+
     try:
         reply_text = await generate_coaching_response(
             user_prompt=user_prompt,
@@ -74,19 +79,31 @@ async def send_message(
             chat_history=chat_history,
         )
     except ValueError as val_err:
-        # Roll back un-responded prompt
         await sessions_collection.delete_one({"_id": insert_res.inserted_id})
+        logger.warning(f"AI Coach configuration error for user {user_id}: {val_err}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(val_err),
         )
     except Exception as exc:
-        # Roll back un-responded prompt
         await sessions_collection.delete_one({"_id": insert_res.inserted_id})
+        logger.exception(f"AI Coach generation error for user {user_id}: {exc}")
+        err_msg = str(exc)
+        if "403" in err_msg or "401" in err_msg or "Forbidden" in err_msg or "Invalid API key" in err_msg or "API_KEY_INVALID" in err_msg:
+            detail = "Invalid or expired AI API key. Please check GEMINI_API_KEY in backend/.env"
+            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        elif "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "Quota" in err_msg:
+            detail = "AI Coach API rate limit or quota exceeded. Please try again in a moment."
+            status_code = status.HTTP_429_TOO_MANY_REQUESTS
+        else:
+            detail = "AI Coach is temporarily unavailable. Please try again."
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to generate AI Coach response. Please try again later.",
+            status_code=status_code,
+            detail=detail,
         )
+
 
 
     # 4. Save AI response to MongoDB

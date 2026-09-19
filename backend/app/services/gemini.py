@@ -196,8 +196,8 @@ async def generate_coaching_response(
             max_output_tokens=1024,
         )
 
-        # Try gemini-2.0-flash first, then gemini-1.5-flash
-        models = ["gemini-2.0-flash", "gemini-1.5-flash"]
+        # Try gemini-3.6-flash first, then fallback models
+        models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest"]
         last_exc = None
         for m in models:
             try:
@@ -234,7 +234,7 @@ async def _call_ai_raw(api_key: str, user_prompt: str) -> str:
         temperature=0.5,
         max_output_tokens=500,
     )
-    models = ["gemini-2.0-flash", "gemini-1.5-flash"]
+    models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest"]
     for m in models:
         try:
             res = client.models.generate_content(model=m, contents=user_prompt, config=config)

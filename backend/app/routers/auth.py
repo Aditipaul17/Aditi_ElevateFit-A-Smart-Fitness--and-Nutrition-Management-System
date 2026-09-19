@@ -69,6 +69,24 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     return user
 
 
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+
+
+async def get_optional_current_user(token: str | None = Depends(oauth2_scheme_optional)) -> dict | None:
+    if not token:
+        return None
+    try:
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        object_id = ObjectId(user_id)
+        return await users_collection.find_one({"_id": object_id})
+    except Exception:
+        return None
+
+
+
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 async def register(payload: UserCreate):
     normalized_email = payload.email.lower().strip()

@@ -1,9 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { CheckCircle2, Loader2, Sparkles, Footprints, ShieldCheck, Clock, Dumbbell } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  CheckCircle2,
+  Loader2,
+  Sparkles,
+  Footprints,
+  ShieldCheck,
+  Clock,
+  Dumbbell,
+  RotateCw,
+  Video,
+  AlertCircle,
+  SlidersHorizontal,
+} from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { WorkoutCard, WorkoutItem } from "@/components/WorkoutCard";
+import { YouTubeWorkoutCard } from "@/components/YouTubeWorkoutCard";
 import { workouts as fallbackWorkouts } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/AuthContext";
@@ -14,6 +28,9 @@ import {
   completeWorkout,
   fetchTodaySteps,
   logSteps,
+  fetchYouTubeRecommendations,
+  YouTubeWorkoutVideoItem,
+  getErrorMessage,
   ApiError,
 } from "@/lib/api";
 import { getRecommendedWorkouts } from "@/lib/recommendationEngine";
@@ -39,6 +56,13 @@ export default function WorkoutsPage() {
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // YouTube Recommendations State
+  const [ytVideos, setYtVideos] = useState<YouTubeWorkoutVideoItem[]>([]);
+  const [ytQuery, setYtQuery] = useState<string>("");
+  const [loadingYt, setLoadingYt] = useState<boolean>(true);
+  const [ytError, setYtError] = useState<string | null>(null);
+  const [ytMissingPrefs, setYtMissingPrefs] = useState<boolean>(false);
 
   // Step Tracking State
   const [todaySteps, setTodaySteps] = useState<number>(0);
@@ -121,6 +145,50 @@ export default function WorkoutsPage() {
       setLoadingRecs(false);
     }
   }, [token, user, completedIds]);
+
+  // Load AI YouTube Recommendations & auto-update on user preference change
+  const loadYouTubeRecs = useCallback((refresh: boolean = false) => {
+    if (!token) {
+      setLoadingYt(false);
+      return;
+    }
+    setLoadingYt(true);
+    setYtError(null);
+    fetchYouTubeRecommendations(token, refresh)
+      .then((res) => {
+        if (res.missing_preferences) {
+          setYtMissingPrefs(true);
+          setYtVideos([]);
+        } else {
+          setYtMissingPrefs(false);
+          setYtVideos(res.videos || []);
+          setYtQuery(res.query_used || "");
+        }
+      })
+      .catch((err) => {
+        setYtError(getErrorMessage(err, "Failed to load YouTube recommendations."));
+      })
+      .finally(() => {
+        setLoadingYt(false);
+      });
+  }, [token]);
+
+  useEffect(() => {
+    loadYouTubeRecs(false);
+  }, [
+    token,
+    user?.fitness_goal,
+    user?.workout_experience,
+    user?.preferred_workout_type,
+    user?.available_workout_time,
+    user?.equipment,
+    user?.activity_level,
+    loadYouTubeRecs,
+  ]);
+
+  const handleRefreshYouTube = () => {
+    loadYouTubeRecs(true);
+  };
 
   const handleSave = async (workoutId: string) => {
     if (savedIds.includes(workoutId)) return;
@@ -241,7 +309,118 @@ export default function WorkoutsPage() {
           </div>
         )}
 
-        {/* ── Recommended for You Section ── */}
+        {/* ── AI Recommended YouTube Workouts Section ── */}
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-600 text-white shadow-md">
+                  <Video size={16} />
+                </span>
+                <h2 className="text-xl font-display font-bold text-ink dark:text-white flex items-center gap-2">
+                  AI Recommended YouTube Workouts
+                </h2>
+              </div>
+              <p className="text-sm text-ink-muted mt-1">
+                Personalized YouTube routines dynamically curated from your questionnaire preferences
+              </p>
+            </div>
+
+            <button
+              onClick={() => handleRefreshYouTube()}
+              disabled={loadingYt}
+              className="flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-card-dark px-3.5 py-2 text-xs font-semibold text-ink dark:text-white hover:border-primary hover:text-primary transition-colors disabled:opacity-50 shadow-sm"
+            >
+              <RotateCw size={14} className={loadingYt ? "animate-spin text-primary" : ""} />
+              Refresh Recommendations
+            </button>
+          </div>
+
+          {/* AI Query Badge */}
+          {ytQuery && !loadingYt && !ytMissingPrefs && !ytError && (
+            <div className="flex items-center gap-2 text-xs text-ink-muted bg-primary/5 border border-primary/10 rounded-xl px-3.5 py-2 w-fit">
+              <Sparkles size={14} className="text-primary shrink-0" />
+              <span>
+                AI Generated Query: <strong className="text-ink dark:text-white font-medium">&quot;{ytQuery}&quot;</strong>
+              </span>
+            </div>
+          )}
+
+          {/* 1. Loading State */}
+          {loadingYt ? (
+            <div className="flex h-56 flex-col items-center justify-center gap-3 text-ink-muted text-sm border border-dashed border-primary/20 bg-primary/5 rounded-2xl p-6 text-center">
+              <Loader2 size={28} className="animate-spin text-primary" />
+              <div>
+                <p className="font-semibold text-ink dark:text-white text-base">Fetching AI YouTube Recommendations...</p>
+                <p className="text-xs text-ink-muted mt-1">Analyzing your goal, time, experience, equipment &amp; activity level</p>
+              </div>
+            </div>
+          ) : ytMissingPrefs ? (
+            /* 2. Missing Preferences State */
+            <Card className="bg-gradient-to-r from-amber-500/10 via-primary/5 to-transparent border border-amber-500/20 p-6 space-y-4">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-500">
+                  <SlidersHorizontal size={20} />
+                </span>
+                <div className="space-y-1">
+                  <h3 className="font-display font-bold text-ink dark:text-white text-base">
+                    Questionnaire Preferences Required
+                  </h3>
+                  <p className="text-sm text-ink-muted">
+                    To generate personalized AI YouTube video recommendations, please set your questionnaire preferences in Settings (fitness goal, workout experience, preferred type, available time, equipment, activity level).
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Link
+                  href="/settings"
+                  className="btn-primary text-xs !px-4 !py-2 flex items-center gap-1.5"
+                >
+                  <SlidersHorizontal size={14} /> Update Questionnaire Preferences
+                </Link>
+              </div>
+            </Card>
+          ) : ytError ? (
+            /* 3. Error State */
+            <Card className="border border-red-500/20 bg-red-500/5 p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <AlertCircle size={22} className="text-red-500 shrink-0" />
+                <div>
+                  <h3 className="font-semibold text-ink dark:text-white text-sm">Unable to load YouTube recommendations</h3>
+                  <p className="text-xs text-ink-muted mt-0.5">{ytError}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => loadYouTubeRecs(false)}
+                className="btn-primary text-xs !px-4 !py-2 shrink-0 flex items-center gap-1"
+              >
+                <RotateCw size={13} /> Try Again
+              </button>
+            </Card>
+          ) : ytVideos.length > 0 ? (
+            /* 4. Success State */
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {ytVideos.map((video) => (
+                <YouTubeWorkoutCard key={`yt-${video.video_id}`} video={video} />
+              ))}
+            </div>
+          ) : (
+            /* Empty Video List Fallback */
+            <div className="flex h-40 flex-col items-center justify-center text-center p-6 border border-dashed border-black/10 dark:border-white/10 rounded-2xl">
+              <p className="text-sm text-ink-muted">No YouTube video recommendations available.</p>
+              <button
+                onClick={() => handleRefreshYouTube()}
+                className="mt-2 text-xs text-primary font-semibold hover:underline flex items-center gap-1"
+              >
+                <RotateCw size={12} /> Refresh Recommendations
+              </button>
+            </div>
+          )}
+        </section>
+
+        <hr className="border-black/5 dark:border-white/5" />
+
+        {/* ── Recommended Exercises & Workouts Section ── */}
         <section className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>

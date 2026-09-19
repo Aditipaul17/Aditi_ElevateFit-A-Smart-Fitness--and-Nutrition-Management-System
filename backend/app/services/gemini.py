@@ -218,3 +218,121 @@ async def generate_coaching_response(
         raise RuntimeError(f"Gemini API error: {str(exc)}") from exc
 
 
+async def _call_ai_raw(api_key: str, user_prompt: str) -> str:
+    """Internal helper to execute a simple prompt on Groq or Gemini."""
+    system_instruction = "You are ElevateFit AI, an expert fitness assistant. Be concise and precise."
+    if api_key.startswith("gsk_"):
+        return await _generate_groq_response(
+            api_key=api_key,
+            system_instruction=system_instruction,
+            user_prompt=user_prompt,
+        )
+
+    client = genai.Client(api_key=api_key)
+    config = types.GenerateContentConfig(
+        system_instruction=system_instruction,
+        temperature=0.5,
+        max_output_tokens=500,
+    )
+    models = ["gemini-2.0-flash", "gemini-1.5-flash"]
+    for m in models:
+        try:
+            res = client.models.generate_content(model=m, contents=user_prompt, config=config)
+            if res and res.text:
+                return res.text.strip()
+        except Exception:
+            continue
+    raise RuntimeError("Gemini call returned empty response.")
+
+
+async def generate_youtube_search_query(user_profile: Dict[str, Any]) -> str:
+    """Uses AI to generate a highly targeted YouTube search query string from user preferences."""
+    goal = user_profile.get("fitness_goal") or "Fitness"
+    exp = user_profile.get("workout_experience") or "Beginner"
+    wtype = user_profile.get("preferred_workout_type") or "Workout"
+    wtime = user_profile.get("available_workout_time") or "30 min"
+    equipment = user_profile.get("equipment") or []
+    eq_str = ", ".join(equipment) if isinstance(equipment, list) else str(equipment)
+    act = user_profile.get("activity_level") or ""
+
+    user_prompt = (
+        f"Generate a single concise YouTube workout search query (4-7 words) for an athlete with preferences:\n"
+        f"- Fitness Goal: {goal}\n"
+        f"- Workout Type: {wtype}\n"
+        f"- Experience Level: {exp}\n"
+        f"- Available Time: {wtime}\n"
+        f"- Equipment Available: {eq_str}\n"
+        f"- Activity Level: {act}\n\n"
+        "Return ONLY the search query string, nothing else. Do not use quotes or explanations."
+    )
+
+    api_key = (settings.gemini_api_key or settings.groq_api_key or "").strip()
+    if not api_key:
+        parts = [wtime, exp, wtype, goal, eq_str, "workout"]
+        clean_parts = [p for p in parts if p and p.lower() != "none" and "no preference" not in p.lower()]
+        return " ".join(clean_parts)
+
+    try:
+        query = await _call_ai_raw(api_key, user_prompt)
+        query = query.strip().strip('"').strip("'")
+        if query:
+            return query
+    except Exception as e:
+        logger.warning(f"AI query generation failed: {e}. Using fallback query.")
+
+    parts = [wtime, exp, wtype, goal, eq_str, "workout"]
+    clean_parts = [p for p in parts if p and p.lower() != "none" and "no preference" not in p.lower()]
+    return " ".join(clean_parts)
+
+
+
+async def generate_youtube_match_reasons(
+    user_profile: Dict[str, Any],
+    videos: List[Dict[str, Any]],
+) -> List[str]:
+    """Generates a short personalized reason for why each video matches user preferences."""
+    goal = user_profile.get("fitness_goal") or "fitness goal"
+    exp = user_profile.get("workout_experience") or "experience level"
+    wtype = user_profile.get("preferred_workout_type") or "workout type"
+    wtime = user_profile.get("available_workout_time") or "available time"
+    equipment = user_profile.get("equipment") or []
+    eq_str = ", ".join(equipment) if isinstance(equipment, list) and equipment else "no equipment"
+
+    video_titles = [f"{i+1}. {v.get('title', '')} ({v.get('duration', '')})" for i, v in enumerate(videos)]
+    titles_block = "\n".join(video_titles)
+
+    user_prompt = (
+        f"Athlete Profile:\n"
+        f"- Fitness Goal: {goal}\n"
+        f"- Preferred Workout: {wtype}\n"
+        f"- Experience: {exp}\n"
+        f"- Time Available: {wtime}\n"
+        f"- Equipment: {eq_str}\n\n"
+        f"For each of the following YouTube videos, provide 1 short sentence (max 12 words) explaining why it matches the athlete's preferences:\n"
+        f"{titles_block}\n\n"
+        "Return a JSON list of strings, e.g. [\"Reason 1\", \"Reason 2\", ...]. Return ONLY valid JSON."
+    )
+
+    api_key = (settings.gemini_api_key or settings.groq_api_key or "").strip()
+    if api_key:
+        try:
+            raw = await _call_ai_raw(api_key, user_prompt)
+            import json
+            if "```" in raw:
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            reasons = json.loads(raw.strip())
+            if isinstance(reasons, list) and len(reasons) == len(videos):
+                return [str(r).strip() for r in reasons]
+        except Exception as e:
+            logger.warning(f"AI match reasons generation failed: {e}. Using rule-based fallback.")
+
+    fallback_reasons = []
+    for v in videos:
+        reason = f"Matches your {exp} level, {wtime} time slot, and {goal} goal."
+        fallback_reasons.append(reason)
+    return fallback_reasons
+
+
+

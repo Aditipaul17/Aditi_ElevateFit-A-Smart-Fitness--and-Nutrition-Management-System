@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     gemini_api_key: str = ""
     groq_api_key: str = ""
+    youtube_api_key: str = ""
 
 
     cors_origins: list[str] = [

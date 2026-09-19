@@ -1,10 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.core.config import settings
 from app.database import workouts_collection
-from app.models.schemas import WorkoutOut
+from app.models.schemas import WorkoutOut, YouTubeRecommendationsResponse, YouTubeWorkoutVideo
 from app.routers.auth import get_current_user
+from app.services.gemini import generate_youtube_match_reasons, generate_youtube_search_query
+from app.services.youtube import fetch_youtube_workout_videos
 
 router = APIRouter(prefix="/workouts", tags=["workouts"])
+
 
 
 def _serialize(doc: dict, reason: str | None = None, score: float | None = None) -> WorkoutOut:
@@ -249,7 +253,113 @@ async def get_workout_recommendations(current_user: dict = Depends(get_current_u
     return [_serialize(doc, reason=reason, score=score) for score, reason, doc in recommended_docs]
 
 
+@router.get("/youtube-recommendations", response_model=YouTubeRecommendationsResponse)
+async def get_youtube_workout_recommendations(
+    refresh: bool = False,
+    current_user: dict = Depends(get_current_user),
+):
+    """Generates AI personalized YouTube workout recommendations based on user questionnaire/profile preferences."""
+    # 1. Verify user has preferences set
+    has_preferences = any([
+        current_user.get("fitness_goal"),
+        current_user.get("workout_experience"),
+        current_user.get("preferred_workout_type"),
+        current_user.get("available_workout_time"),
+        current_user.get("equipment"),
+        current_user.get("activity_level"),
+    ])
+
+    if not has_preferences:
+        # Fallback to popular workout query if user hasn't completed questionnaire preferences yet
+        fallback_query = "full body workout home fitness"
+        try:
+            raw_videos = await fetch_youtube_workout_videos(
+                query=fallback_query, api_key=settings.youtube_api_key, max_results=6
+            )
+            video_models = [
+                YouTubeWorkoutVideo(
+                    video_id=item["video_id"],
+                    title=item["title"],
+                    channel_title=item["channel_title"],
+                    thumbnail_url=item["thumbnail_url"],
+                    duration=item["duration"],
+                    video_url=item["video_url"],
+                    recommendation_reason="Trending full body home workout",
+                )
+                for item in raw_videos
+            ]
+            return YouTubeRecommendationsResponse(
+                query_used=fallback_query,
+                videos=video_models,
+                missing_preferences=False,
+                message="Showing trending fitness workouts. Complete your profile in Settings for AI personalized recommendations!",
+            )
+        except Exception:
+            return YouTubeRecommendationsResponse(
+                query_used="",
+                videos=[],
+                missing_preferences=True,
+                message="Please complete your questionnaire preferences in Settings to get personalized AI YouTube recommendations.",
+            )
+
+    # 2. Generate personalized search query via Gemini / AI
+    query = await generate_youtube_search_query(current_user)
+    if refresh:
+        import random
+        variations = ["workout routine", "fitness class", "home session", "exercise guide", "training video"]
+        query = f"{query} {random.choice(variations)}"
+
+    # 3. Fetch videos from YouTube Data API
+    try:
+        raw_videos = await fetch_youtube_workout_videos(query=query, api_key=settings.youtube_api_key, max_results=6)
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(ve),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"YouTube Data API error: {str(exc)}",
+        )
+
+    if not raw_videos:
+        return YouTubeRecommendationsResponse(
+            query_used=query,
+            videos=[],
+            missing_preferences=False,
+            message="No YouTube videos found matching your criteria. Try refreshing recommendations.",
+        )
+
+    # 4. Generate AI personalized match reasons
+    reasons = await generate_youtube_match_reasons(current_user, raw_videos)
+
+    # 5. Format response items
+    video_models = []
+    for i, item in enumerate(raw_videos):
+        reason_text = reasons[i] if i < len(reasons) else f"Matches your {current_user.get('fitness_goal', 'fitness')} preferences."
+        video_models.append(
+            YouTubeWorkoutVideo(
+                video_id=item["video_id"],
+                title=item["title"],
+                channel_title=item["channel_title"],
+                thumbnail_url=item["thumbnail_url"],
+                duration=item["duration"],
+                video_url=item["video_url"],
+                recommendation_reason=reason_text,
+            )
+        )
+
+    return YouTubeRecommendationsResponse(
+        query_used=query,
+        videos=video_models,
+        missing_preferences=False,
+        message=None,
+    )
+
+
 @router.get("/{workout_id}", response_model=WorkoutOut)
+
 async def get_workout(workout_id: str):
     from bson import ObjectId
 

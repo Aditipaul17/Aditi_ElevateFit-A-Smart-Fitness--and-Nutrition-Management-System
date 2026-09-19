@@ -500,6 +500,41 @@ export async function fetchTodaySteps(token: string): Promise<{ steps: number; g
   return body as { steps: number; goal: number };
 }
 
+export type YouTubeWorkoutVideoItem = {
+  video_id: string;
+  title: string;
+  channel_title: string;
+  thumbnail_url: string;
+  duration: string;
+  video_url: string;
+  recommendation_reason: string;
+};
+
+export type YouTubeRecommendationsResponse = {
+  query_used: string;
+  videos: YouTubeWorkoutVideoItem[];
+  missing_preferences: boolean;
+  message?: string | null;
+};
+
+export async function fetchYouTubeRecommendations(
+  token: string,
+  refresh: boolean = false
+): Promise<YouTubeRecommendationsResponse> {
+  const url = new URL(`${API_BASE_URL}/workouts/youtube-recommendations`);
+  if (refresh) url.searchParams.set("refresh", "true");
+
+  const res = await safeFetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not load YouTube recommendations."), res.status);
+  }
+  return body as YouTubeRecommendationsResponse;
+}
+
+
 
 
 

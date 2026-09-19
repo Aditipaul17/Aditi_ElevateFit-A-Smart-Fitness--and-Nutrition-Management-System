@@ -207,3 +207,21 @@ class ActivityResponse(BaseModel):
     message: str
 
 
+class YouTubeWorkoutVideo(BaseModel):
+    video_id: str
+    title: str
+    channel_title: str
+    thumbnail_url: str
+    duration: str
+    video_url: str
+    recommendation_reason: str
+
+
+class YouTubeRecommendationsResponse(BaseModel):
+    query_used: str
+    videos: list[YouTubeWorkoutVideo]
+    missing_preferences: bool = False
+    message: Optional[str] = None
+
+
+

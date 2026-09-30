@@ -54,12 +54,25 @@ function isEquipmentAllowed(exerciseEquipment: string, selectedEquipment: any): 
     ? selectedEquipment.join(" ").toLowerCase()
     : String(selectedEquipment || "").toLowerCase();
 
-  if (selStr.includes("home") || selStr.includes("bodyweight") || selStr.includes("none")) {
+  // 1. Strict No Equipment / Bodyweight / Home
+  if (
+    selStr.includes("home") ||
+    selStr.includes("bodyweight") ||
+    selStr.includes("body weight") ||
+    selStr.includes("no equipment") ||
+    selStr.includes("no_equipment") ||
+    selStr.includes("none")
+  ) {
     const allowedHome = ["body weight", "assisted", "none", "roller", "wheel roller"];
     return allowedHome.some((a) => eq.includes(a));
   }
 
-  if (selStr.includes("dumbbell") || selStr.includes("band")) {
+  // 2. Dumbbells & Bands
+  if (
+    selStr.includes("dumbbell") ||
+    selStr.includes("band") ||
+    selStr.includes("kettlebell")
+  ) {
     const allowedDumbbell = [
       "body weight",
       "assisted",
@@ -75,7 +88,7 @@ function isEquipmentAllowed(exerciseEquipment: string, selectedEquipment: any): 
     return allowedDumbbell.some((a) => eq.includes(a));
   }
 
-  // Gym / Full Equipment allows everything
+  // 3. Gym / Full Equipment allows everything
   return true;
 }
 

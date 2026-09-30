@@ -161,8 +161,12 @@ export function searchExercises(
     const matchesBp =
       bp === "all" || exBodyPart.includes(bp) || exCategory.includes(bp);
 
-    const matchesEq =
-      eq === "all" || exEquipment.includes(eq);
+    let matchesEq = eq === "all" || exEquipment.includes(eq);
+    if (eq === "no equipment" || eq === "bodyweight" || eq === "body weight") {
+      matchesEq = ["body weight", "assisted", "none", "roller", "wheel roller"].some((b) =>
+        exEquipment.includes(b)
+      );
+    }
 
     return matchesQuery && matchesBp && matchesEq;
   });

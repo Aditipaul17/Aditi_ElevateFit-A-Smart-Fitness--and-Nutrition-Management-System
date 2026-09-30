@@ -42,54 +42,101 @@ export const DEFAULT_PREFERENCES: WorkoutPreferenceQuery = {
 };
 
 export function formatEquipmentString(eq: any): string {
-  if (Array.isArray(eq)) return eq.join(", ") || "Home / Bodyweight";
+  if (Array.isArray(eq)) {
+    if (eq.length === 0) return "No equipment";
+    return eq.join(", ");
+  }
   if (typeof eq === "string" && eq.trim().length > 0) return eq;
-  return "Home / Bodyweight";
+  return "No equipment";
 }
 
 // Equipment filtering rules
 function isEquipmentAllowed(exerciseEquipment: string, selectedEquipment: any): boolean {
   const eq = String(exerciseEquipment || "").toLowerCase().trim();
-  const selStr = Array.isArray(selectedEquipment)
-    ? selectedEquipment.join(" ").toLowerCase()
-    : String(selectedEquipment || "").toLowerCase();
 
-  // 1. Strict No Equipment / Bodyweight / Home
-  if (
-    selStr.includes("home") ||
-    selStr.includes("bodyweight") ||
-    selStr.includes("body weight") ||
+  let selList: string[] = [];
+  if (Array.isArray(selectedEquipment)) {
+    selList = selectedEquipment.map((s) => String(s).toLowerCase().trim());
+  } else if (typeof selectedEquipment === "string") {
+    selList = selectedEquipment
+      .toLowerCase()
+      .split(/,|\s+and\s+|\s+&\s+/)
+      .map((s) => s.trim());
+  }
+
+  const selStr = selList.join(" ");
+
+  // 1. Always allowed for everyone: Body Weight / No equipment exercises
+  const bodyweightEquipments = ["body weight", "assisted", "none", "roller", "wheel roller"];
+  if (bodyweightEquipments.some((b) => eq.includes(b))) {
+    return true;
+  }
+
+  // 2. Check if user specified "Gym / Full Equipment" or "Full gym access"
+  const isFullGym =
+    selStr.includes("full gym") ||
+    selStr.includes("gym / full") ||
+    selStr.includes("full equipment") ||
+    selStr.includes("gym access");
+
+  if (isFullGym) {
+    return true;
+  }
+
+  // 3. Check if user has NO equipment
+  const isNoEquipment =
+    selList.length === 0 ||
+    selStr === "" ||
     selStr.includes("no equipment") ||
     selStr.includes("no_equipment") ||
-    selStr.includes("none")
-  ) {
-    const allowedHome = ["body weight", "assisted", "none", "roller", "wheel roller"];
-    return allowedHome.some((a) => eq.includes(a));
-  }
+    selStr.includes("home / bodyweight") ||
+    selStr.includes("bodyweight") ||
+    selStr.includes("none");
 
-  // 2. Dumbbells & Bands
   if (
-    selStr.includes("dumbbell") ||
-    selStr.includes("band") ||
-    selStr.includes("kettlebell")
+    isNoEquipment &&
+    !selStr.includes("dumbbell") &&
+    !selStr.includes("barbell") &&
+    !selStr.includes("band") &&
+    !selStr.includes("kettlebell")
   ) {
-    const allowedDumbbell = [
-      "body weight",
-      "assisted",
-      "none",
-      "dumbbell",
-      "band",
-      "resistance band",
-      "kettlebell",
-      "medicine ball",
-      "roller",
-      "wheel roller",
-    ];
-    return allowedDumbbell.some((a) => eq.includes(a));
+    return false;
   }
 
-  // 3. Gym / Full Equipment allows everything
-  return true;
+  // 4. Match required exercise equipment against user's available equipment list
+  if (eq.includes("dumbbell") && (selStr.includes("dumbbell") || selStr.includes("dumbbells"))) {
+    return true;
+  }
+
+  if ((eq.includes("barbell") || eq.includes("trap bar")) && (selStr.includes("barbell") || selStr.includes("barbells"))) {
+    return true;
+  }
+
+  if (eq.includes("kettlebell") && selStr.includes("kettlebell")) {
+    return true;
+  }
+
+  if ((eq.includes("band") || eq.includes("rope")) && (selStr.includes("band") || selStr.includes("rope"))) {
+    return true;
+  }
+
+  if (eq.includes("ball") && (selStr.includes("ball") || selStr.includes("dumbbell") || selStr.includes("gym"))) {
+    return true;
+  }
+
+  if (
+    eq.includes("cable") ||
+    eq.includes("machine") ||
+    eq.includes("leverage") ||
+    eq.includes("smith") ||
+    eq.includes("sled") ||
+    eq.includes("bike") ||
+    eq.includes("skierg")
+  ) {
+    return isFullGym || selStr.includes("cable") || selStr.includes("machine");
+  }
+
+  return false;
 }
 
 // Body Part / Target Muscle matching
@@ -254,8 +301,15 @@ export function generatePersonalizedWorkout(
     isEquipmentAllowed(ex.equipment, safeEquipment)
   );
 
-  // Pool of candidate exercises
-  let candidates = equipmentFiltered.length > 0 ? equipmentFiltered : allExercises;
+  // Pool of candidate exercises: if strict equipment filter returns empty, fallback ONLY to bodyweight exercises
+  let candidates = equipmentFiltered;
+  if (candidates.length === 0) {
+    candidates = allExercises.filter((ex) =>
+      ["body weight", "assisted", "none", "roller", "wheel roller"].some((b) =>
+        String(ex.equipment || "").toLowerCase().includes(b)
+      )
+    );
+  }
 
   // Filter out any recently excluded IDs if needed
   if (excludeIds.length > 0) {

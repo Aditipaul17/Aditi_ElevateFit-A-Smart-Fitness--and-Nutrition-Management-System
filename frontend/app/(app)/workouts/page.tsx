@@ -121,13 +121,15 @@ export default function WorkoutsPage() {
   const [ytVideos, setYtVideos] = useState<YouTubeWorkoutVideoItem[]>([]);
   const [loadingYt, setLoadingYt] = useState<boolean>(true);
 
-  // Load Saved Preferences & History on Mount
+  // Load Saved Preferences & History on Mount and sync with user profile
   useEffect(() => {
-    // Restore Saved User Preferences
     const savedPrefs = localStorage.getItem(STORAGE_KEY_PREFS);
     if (savedPrefs) {
       try {
         const parsed = JSON.parse(savedPrefs);
+        if (user && user.equipment) {
+          parsed.equipment = formatEquipmentString(user.equipment);
+        }
         setUserPrefs(parsed);
       } catch (e) {}
     } else if (user) {

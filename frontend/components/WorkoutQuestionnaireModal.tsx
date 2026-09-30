@@ -159,31 +159,41 @@ export function WorkoutQuestionnaireModal({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {(
                   [
-                    { label: "Home / Bodyweight", sub: "No equipment required" },
+                    { label: "No Equipment / Bodyweight", sub: "No equipment required" },
                     { label: "Dumbbells & Bands", sub: "Dumbbells, bands, kettlebells" },
                     { label: "Gym / Full Equipment", sub: "Barbells, cables, machines" },
                   ] as const
-                ).map((eq) => (
-                  <button
-                    type="button"
-                    key={eq.label}
-                    onClick={() => setPrefs({ ...prefs, equipment: eq.label })}
-                    className={`p-3 rounded-2xl border text-left transition-all ${
-                      prefs.equipment === eq.label
-                        ? "bg-primary text-white border-primary shadow-sm"
-                        : "bg-surface dark:bg-surface-dark border-black/10 dark:border-white/10 text-ink dark:text-white hover:border-primary/50"
-                    }`}
-                  >
-                    <span className="text-xs font-bold block">{eq.label}</span>
-                    <span
-                      className={`text-[10px] block mt-0.5 ${
-                        prefs.equipment === eq.label ? "text-white/80" : "text-ink-muted"
+                ).map((eq) => {
+                  const isSelected =
+                    prefs.equipment === eq.label ||
+                    (eq.label.startsWith("No Equipment") &&
+                      (prefs.equipment === "No equipment" ||
+                        prefs.equipment === "Home / Bodyweight" ||
+                        prefs.equipment === "Bodyweight" ||
+                        prefs.equipment === "None"));
+
+                  return (
+                    <button
+                      type="button"
+                      key={eq.label}
+                      onClick={() => setPrefs({ ...prefs, equipment: eq.label })}
+                      className={`p-3 rounded-2xl border text-left transition-all ${
+                        isSelected
+                          ? "bg-primary text-white border-primary shadow-sm"
+                          : "bg-surface dark:bg-surface-dark border-black/10 dark:border-white/10 text-ink dark:text-white hover:border-primary/50"
                       }`}
                     >
-                      {eq.sub}
-                    </span>
-                  </button>
-                ))}
+                      <span className="text-xs font-bold block">{eq.label}</span>
+                      <span
+                        className={`text-[10px] block mt-0.5 ${
+                          isSelected ? "text-white/80" : "text-ink-muted"
+                        }`}
+                      >
+                        {eq.sub}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

@@ -10,7 +10,7 @@ import { ApiError, getErrorMessage } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, isAuthenticated, isLoading: sessionLoading } = useAuth();
+  const { login, signup, isAuthenticated, isLoading: sessionLoading } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -39,6 +39,23 @@ export default function LoginPage() {
       router.push("/dashboard");
     } catch (err) {
       setError(getErrorMessage(err, "Invalid email or password."));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDemoLogin() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      try {
+        await login("athlete@elevatefit.io", "Password123!");
+      } catch {
+        await signup("Alex Rivers", "athlete@elevatefit.io", "Password123!", "Password123!");
+      }
+      router.push("/dashboard");
+    } catch (err) {
+      setError(getErrorMessage(err, "Could not sign in with demo account."));
     } finally {
       setSubmitting(false);
     }
@@ -98,6 +115,24 @@ export default function LoginPage() {
         <button type="submit" disabled={submitting} className="btn-primary w-full disabled:opacity-60">
           {submitting ? <Loader2 size={16} className="animate-spin" /> : null}
           {submitting ? "Logging in…" : "Log In"}
+        </button>
+
+        <div className="relative my-4 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-black/10 dark:border-white/10" />
+          </div>
+          <span className="relative bg-white dark:bg-card-dark px-3 text-xs text-ink-muted">
+            OR
+          </span>
+        </div>
+
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={handleDemoLogin}
+          className="w-full py-2.5 rounded-xl border border-primary/40 bg-primary/10 text-primary font-semibold text-sm hover:bg-primary/20 transition-colors flex items-center justify-center gap-2"
+        >
+          <span>⚡ One-Click Demo Access</span>
         </button>
       </form>
     </AuthShell>

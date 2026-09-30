@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutGrid,
+  Footprints,
   Dumbbell,
   UtensilsCrossed,
   BotMessageSquare,
@@ -17,6 +18,7 @@ import { useAuth } from "@/lib/AuthContext";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
+  { href: "/step-counter", label: "Step Counter", icon: Footprints },
   { href: "/workouts", label: "Workouts", icon: Dumbbell },
   { href: "/nutrition", label: "Nutrition", icon: UtensilsCrossed },
   { href: "/ai-coach", label: "AI Coach", icon: BotMessageSquare },

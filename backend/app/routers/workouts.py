@@ -458,4 +458,43 @@ async def get_today_steps(current_user: dict = Depends(get_current_user)):
     return {"steps": steps, "goal": 10000, "date": today_str}
 
 
+@router.get("/steps/weekly")
+async def get_weekly_steps(current_user: dict = Depends(get_current_user)):
+    from datetime import datetime, timedelta, timezone
+    from app.database import step_logs_collection
+
+    user_id_str = str(current_user["_id"])
+    today = datetime.now(timezone.utc).date()
+    
+    # Generate past 7 days (including today)
+    dates = [today - timedelta(days=i) for i in range(6, -1, -1)]
+    date_strs = [d.strftime("%Y-%m-%d") for d in dates]
+
+    logs = await step_logs_collection.find({
+        "user_id": user_id_str,
+        "date": {"$in": date_strs}
+    }).to_list(length=100)
+
+    log_map = {log["date"]: log.get("steps", 0) for log in logs}
+
+    result = []
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    for d, d_str in zip(dates, date_strs):
+        st = log_map.get(d_str, 0)
+        day_label = day_names[d.weekday()]
+        kcal = round(st * 0.05)
+        mins = round(st * 0.005)
+        result.append({
+            "date": d_str,
+            "day": day_label,
+            "steps": st,
+            "kcal": kcal,
+            "min": mins,
+            "is_today": d_str == date_strs[-1]
+        })
+
+    return result
+
+
+
 

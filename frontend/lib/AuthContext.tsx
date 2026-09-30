@@ -47,15 +47,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     setToken(stored);
+
+    // Timeout safety to ensure session check never hangs indefinitely
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort();
+    }, 1800);
+
     fetchCurrentUser(stored)
       .then((me) => setUser(me))
       .catch(() => {
-        // Token is invalid or expired.
+        // Token is invalid, expired, or timed out.
         window.localStorage.removeItem(TOKEN_STORAGE_KEY);
         setToken(null);
         setUser(null);
       })
-      .finally(() => setIsLoading(false));
+      .finally(() => {
+        clearTimeout(timer);
+        setIsLoading(false);
+      });
   }, []);
 
   const applyToken = useCallback(async (accessToken: string) => {

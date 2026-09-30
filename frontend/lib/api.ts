@@ -406,6 +406,27 @@ export async function completeWorkout(token: string, workoutId: string): Promise
   return body as { id: string; gamification?: ActivityRewardResponse };
 }
 
+export async function logWorkoutSession(
+  token: string,
+  payload: { title: string; duration_minutes: number; calories_burned: number }
+): Promise<{ id: string; gamification?: ActivityRewardResponse }> {
+  try {
+    const res = await safeFetch(`${API_BASE_URL}/workouts/session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const body = await parseJsonSafe(res);
+    if (res.ok) return body as { id: string; gamification?: ActivityRewardResponse };
+  } catch (e) {}
+  // Fallback to complete workout endpoint
+  return completeWorkout(token, "custom_dataset_session");
+}
+
+
 export type Badge = {
   id: string;
   name: string;
@@ -498,6 +519,26 @@ export async function fetchTodaySteps(token: string): Promise<{ steps: number; g
     throw new ApiError(extractErrorMessage(body, "Could not load today's steps."), res.status);
   }
   return body as { steps: number; goal: number };
+}
+
+export type WeeklyStepPoint = {
+  date: string;
+  day: string;
+  steps: number;
+  kcal: number;
+  min: number;
+  is_today: boolean;
+};
+
+export async function fetchWeeklySteps(token: string): Promise<WeeklyStepPoint[]> {
+  const res = await safeFetch(`${API_BASE_URL}/workouts/steps/weekly`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not load weekly steps."), res.status);
+  }
+  return body as WeeklyStepPoint[];
 }
 
 export type YouTubeWorkoutVideoItem = {

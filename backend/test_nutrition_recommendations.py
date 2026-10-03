@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from app.routers.nutrition import calculate_nutrition_targets, generate_recommended_meals, CANDIDATE_MEALS
 
@@ -18,7 +19,7 @@ class TestNutritionRecommendations(unittest.TestCase):
         self.assertGreater(targets.calories, 1000)
         self.assertGreater(targets.protein_g, 30)
 
-        meals = generate_recommended_meals(user_profile, targets)
+        meals = asyncio.run(generate_recommended_meals(user_profile, targets))
         self.assertEqual(len(meals), 4)
 
         # Verify no non-vegetarian items
@@ -40,7 +41,7 @@ class TestNutritionRecommendations(unittest.TestCase):
             "workout_experience": "Intermediate"
         }
         targets = calculate_nutrition_targets(user_profile)
-        meals = generate_recommended_meals(user_profile, targets)
+        meals = asyncio.run(generate_recommended_meals(user_profile, targets))
         self.assertEqual(len(meals), 4)
 
         non_vegan_keywords = ["chicken", "salmon", "paneer", "yogurt", "curd", "feta", "egg", "fish", "meat", "cheese"]

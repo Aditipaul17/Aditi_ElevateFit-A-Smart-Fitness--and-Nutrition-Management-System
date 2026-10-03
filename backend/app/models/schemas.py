@@ -111,6 +111,7 @@ class NutritionTargetsOut(BaseModel):
     protein_g: int
     carbs_g: int
     fat_g: int
+    fiber_g: Optional[int] = 30
 
 
 class MealRecommendationOut(BaseModel):
@@ -122,11 +123,33 @@ class MealRecommendationOut(BaseModel):
     protein_g: int
     carbs_g: int
     fat_g: int
+    fiber_g: Optional[int] = 5
+
+
+class EvidenceSourceOut(BaseModel):
+    name: str
+    authority: str
+    summary: str
+    reference_url: Optional[str] = None
 
 
 class NutritionRecommendationsResponse(BaseModel):
     targets: NutritionTargetsOut
     recommended_meals: list[MealRecommendationOut]
+    evidence_sources: list[EvidenceSourceOut] = []
+    guidance_notes: list[str] = []
+    user_metrics_summary: Optional[dict] = None
+
+
+class MealScanResponse(BaseModel):
+    food_name: str
+    portion_size: str
+    calories: int
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    confidence: float
+    breakdown: str
 
 
 class FoodItemOut(BaseModel):

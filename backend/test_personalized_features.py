@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from app.models.schemas import UserProfileUpdate, UserOut, StepLogCreate
 from app.routers.workouts import calculate_recommendation_score
@@ -59,7 +60,7 @@ class TestPersonalizedFeatures(unittest.TestCase):
         self.assertGreater(targets.calories, 2000)
         self.assertGreater(targets.protein_g, 100)
 
-        meals = generate_recommended_meals(veg_profile, targets)
+        meals = asyncio.run(generate_recommended_meals(veg_profile, targets))
         self.assertEqual(len(meals), 4)
         for meal in meals:
             items_lower = meal.items.lower()

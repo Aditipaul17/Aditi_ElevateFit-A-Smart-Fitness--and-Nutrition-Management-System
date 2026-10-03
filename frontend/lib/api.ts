@@ -288,7 +288,7 @@ export async function logMeal(token: string, payload: MealLogPayload): Promise<{
 
 export async function fetchTodayMeals(token: string): Promise<{
   meals: any[];
-  totals: { calories: number; protein_g: number; carbs_g: number; fat_g: number };
+  totals: { calories: number; protein_g: number; carbs_g: number; fat_g: number; fiber_g?: number };
 }> {
   const res = await safeFetch(`${API_BASE_URL}/nutrition/meals/today`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -305,6 +305,7 @@ export type NutritionTargets = {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  fiber_g?: number;
 };
 
 export type MealRecommendation = {
@@ -316,11 +317,22 @@ export type MealRecommendation = {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  fiber_g?: number;
+};
+
+export type EvidenceSource = {
+  name: string;
+  authority: string;
+  summary: string;
+  reference_url?: string;
 };
 
 export type NutritionRecommendationsResponse = {
   targets: NutritionTargets;
   recommended_meals: MealRecommendation[];
+  evidence_sources?: EvidenceSource[];
+  guidance_notes?: string[];
+  user_metrics_summary?: Record<string, string>;
 };
 
 export type FoodItem = {
@@ -330,6 +342,17 @@ export type FoodItem = {
   carbs_g: number;
   fat_g: number;
   dietary_tags: string[];
+};
+
+export type MealScanResponse = {
+  food_name: string;
+  portion_size: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  confidence: number;
+  breakdown: string;
 };
 
 export async function fetchNutritionRecommendations(
@@ -343,6 +366,47 @@ export async function fetchNutritionRecommendations(
     throw new ApiError(extractErrorMessage(body, "Could not load nutrition recommendations."), res.status);
   }
   return body as NutritionRecommendationsResponse;
+}
+
+export async function scanMealImage(
+  token: string,
+  imageInput: File | string,
+  portionMultiplier: number = 1.0
+): Promise<MealScanResponse> {
+  let res: Response;
+  if (typeof imageInput === "string") {
+    // base64 image data
+    res = await safeFetch(`${API_BASE_URL}/nutrition/scan-meal`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        image_base64: imageInput,
+        portion_multiplier: portionMultiplier,
+      }),
+    });
+  } else {
+    // multipart file upload
+    const formData = new FormData();
+    formData.append("file", imageInput);
+    formData.append("portion_multiplier", String(portionMultiplier));
+
+    res = await safeFetch(`${API_BASE_URL}/nutrition/scan-meal`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+  }
+
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not scan meal image."), res.status);
+  }
+  return body as MealScanResponse;
 }
 
 export async function searchFoods(token: string, query: string): Promise<FoodItem[]> {

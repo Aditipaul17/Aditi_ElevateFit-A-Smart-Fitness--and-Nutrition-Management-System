@@ -16,6 +16,8 @@ import {
   Footprints,
   SlidersHorizontal,
   CheckCircle2,
+  History,
+  Play,
 } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { Card } from "@/components/ui/Card";
@@ -28,11 +30,15 @@ import {
   fetchAnalytics,
   fetchGamification,
   fetchTodaySteps,
-  logSteps,
+  syncTotalSteps,
+  fetchRecentWorkoutSummaries,
+  WorkoutSummaryItem,
   GamificationData,
 } from "@/lib/api";
+import { checkDailyReset } from "@/lib/sensorPedometer";
 
 const quickActions = [
+  { label: "Step Tracker", icon: Footprints, href: "/step-counter" },
   { label: "Log Workout", icon: Plus, href: "/workouts" },
   { label: "Track Meal", icon: Utensils, href: "/nutrition" },
   { label: "Body Metrics", icon: Ruler, href: "/settings" },
@@ -70,11 +76,12 @@ export default function DashboardPage() {
   const [gamification, setGamification] = useState<GamificationData | null>(null);
   const [gamificationLoading, setGamificationLoading] = useState(true);
 
-  // Step Tracking State
+  // Step Tracking & Goals State
   const [todaySteps, setTodaySteps] = useState<number>(0);
-  const [stepGoal] = useState<number>(10000);
+  const [stepGoal, setStepGoal] = useState<number>(10000);
   const [showStepModal, setShowStepModal] = useState<boolean>(false);
   const [stepsInput, setStepsInput] = useState<string>("1000");
+  const [recentWorkouts, setRecentWorkouts] = useState<WorkoutSummaryItem[]>([]);
 
   // Onboarding Modal state
   const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
@@ -90,10 +97,40 @@ export default function DashboardPage() {
   }, [isLoading, user]);
 
   useEffect(() => {
+    // 1. Daily Reset check
+    const { didReset } = checkDailyReset();
+
+    // 2. Step Goal from localStorage
+    const savedGoal = window.localStorage.getItem("elevatefit_step_goal");
+    if (savedGoal) {
+      setStepGoal(parseInt(savedGoal, 10) || 10000);
+    }
+
+    // 3. Local steps
+    if (didReset) {
+      setTodaySteps(0);
+      window.localStorage.setItem("elevatefit_real_steps_today", "0");
+    } else {
+      const cached = window.localStorage.getItem("elevatefit_real_steps_today");
+      if (cached) {
+        setTodaySteps(parseInt(cached, 10) || 0);
+      }
+    }
+
+    // 4. Local recent workout sessions
+    const cachedSessions = window.localStorage.getItem("elevatefit_cached_recent_sessions");
+    if (cachedSessions) {
+      try {
+        const parsed = JSON.parse(cachedSessions);
+        if (Array.isArray(parsed)) setRecentWorkouts(parsed);
+      } catch {}
+    }
+
     if (!token) {
       setGamificationLoading(false);
       return;
     }
+
     fetchAnalytics(token)
       .then((data) => setAnalytics(data))
       .catch(() => {});
@@ -104,22 +141,44 @@ export default function DashboardPage() {
       .finally(() => setGamificationLoading(false));
 
     fetchTodaySteps(token)
-      .then((res) => setTodaySteps(res.steps))
+      .then((res) => {
+        if (typeof res?.steps === "number") {
+          setTodaySteps((prev) => {
+            const resolved = Math.max(prev, res.steps);
+            window.localStorage.setItem("elevatefit_real_steps_today", String(resolved));
+            return resolved;
+          });
+        }
+      })
+      .catch(() => {});
+
+    fetchRecentWorkoutSummaries(token)
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setRecentWorkouts(data);
+          window.localStorage.setItem("elevatefit_cached_recent_sessions", JSON.stringify(data));
+        }
+      })
       .catch(() => {});
   }, [token]);
 
   const handleLogStepsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token || !stepsInput) return;
     const count = parseInt(stepsInput, 10);
     if (isNaN(count) || count <= 0) return;
 
-    try {
-      const res = await logSteps(token, count);
-      setTodaySteps(res.total_steps_today);
-      setShowStepModal(false);
-      setStepsInput("1000");
-    } catch {}
+    checkDailyReset();
+    const newTotal = todaySteps + count;
+    setTodaySteps(newTotal);
+    window.localStorage.setItem("elevatefit_real_steps_today", String(newTotal));
+    setShowStepModal(false);
+    setStepsInput("1000");
+
+    if (token) {
+      try {
+        await syncTotalSteps(token, newTotal);
+      } catch {}
+    }
   };
 
   const stepsPct = Math.min(100, Math.round((todaySteps / stepGoal) * 100));
@@ -338,12 +397,69 @@ export default function DashboardPage() {
           </Card>
         </div>
 
+        {/* Recent Workout Summaries & Fitness Activity */}
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <History size={18} className="text-primary" />
+              <h2 className="text-lg font-display font-semibold text-ink dark:text-white">
+                Recent Workout Summaries &amp; Fitness Tracking
+              </h2>
+            </div>
+            <Link
+              href="/step-counter"
+              className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
+            >
+              <Play size={12} className="fill-current" /> Open Live Sensor Tracker
+            </Link>
+          </div>
+
+          {recentWorkouts.length === 0 ? (
+            <div className="p-8 text-center rounded-xl bg-black/5 dark:bg-white/5 border border-dashed border-black/10 dark:border-white/10 text-xs text-ink-muted space-y-2">
+              <p>No phone sensor workout sessions recorded yet.</p>
+              <Link
+                href="/step-counter"
+                className="btn-primary !px-4 !py-2 text-xs inline-flex items-center gap-1.5 font-semibold"
+              >
+                <Play size={12} className="fill-white" /> Start Your First Sensor Workout
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {recentWorkouts.slice(0, 6).map((workout) => (
+                <div
+                  key={workout.id}
+                  className="flex flex-col justify-between p-4 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 text-xs hover:border-primary/30 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <p className="font-semibold text-ink dark:text-white text-sm">
+                      {workout.title}
+                    </p>
+                    <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold shrink-0">
+                      {workout.category}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-ink-muted text-[11px] mt-2 pt-2 border-t border-black/5 dark:border-white/5">
+                    <span>{workout.duration_minutes} min • {workout.calories} kcal</span>
+                    {workout.steps > 0 && (
+                      <span className="font-semibold text-primary">
+                        {workout.steps.toLocaleString()} steps ({workout.distance_km} km)
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-ink-muted mt-1">{workout.date}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
         {/* Quick Actions */}
         <Card>
           <h2 className="text-lg font-display font-semibold text-ink dark:text-white mb-4">
             Quick Actions
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             {quickActions.map(({ label, icon: Icon, href }) => (
               <Link
                 key={label}

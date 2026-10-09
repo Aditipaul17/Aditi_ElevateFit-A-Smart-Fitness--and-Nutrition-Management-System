@@ -417,16 +417,22 @@ async def log_steps(payload: dict, current_user: dict = Depends(get_current_user
     from app.database import step_logs_collection
 
     steps_val = int(payload.get("steps", 0))
-    if steps_val <= 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Steps must be greater than 0")
+    action = payload.get("action", "add")  # "add" (incremental) or "sync_total" (absolute total)
+    if steps_val < 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Steps cannot be negative")
 
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     user_id_str = str(current_user["_id"])
 
-    # Upsert or increment today's step count
+    # Upsert or increment today's step count with deduplication protection
     existing = await step_logs_collection.find_one({"user_id": user_id_str, "date": today_str})
     if existing:
-        new_total = existing.get("steps", 0) + steps_val
+        current_steps = existing.get("steps", 0)
+        if action == "sync_total":
+            new_total = max(current_steps, steps_val)
+        else:
+            new_total = current_steps + steps_val
+
         await step_logs_collection.update_one(
             {"_id": existing["_id"]},
             {"$set": {"steps": new_total, "updated_at": datetime.now(timezone.utc)}},
@@ -438,6 +444,7 @@ async def log_steps(payload: dict, current_user: dict = Depends(get_current_user
             "steps": steps_val,
             "date": today_str,
             "logged_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
         await step_logs_collection.insert_one(doc)
         total_steps = steps_val
@@ -494,6 +501,115 @@ async def get_weekly_steps(current_user: dict = Depends(get_current_user)):
         })
 
     return result
+
+
+@router.post("/sessions", status_code=status.HTTP_201_CREATED)
+@router.post("/session", status_code=status.HTTP_201_CREATED)
+async def log_workout_session(payload: dict, current_user: dict = Depends(get_current_user)):
+    from datetime import datetime, timezone
+    from app.database import workout_logs_collection, step_logs_collection
+    from app.routers.gamification import process_user_activity
+
+    title = payload.get("title") or "Sensor Workout Session"
+    activity_type = payload.get("activity_type") or "Walking"
+    duration_seconds = int(payload.get("duration_seconds", 0))
+    duration_minutes = int(payload.get("duration_minutes", 0)) or max(1, round(duration_seconds / 60))
+    steps = int(payload.get("steps", 0))
+    distance_km = float(payload.get("distance_km", 0.0))
+    calories = int(payload.get("calories") or payload.get("calories_burned") or round(steps * 0.045 + duration_minutes * 3.5))
+    avg_cadence = payload.get("avg_cadence")
+    source = payload.get("source", "phone_sensor")
+
+    user_id_str = str(current_user["_id"])
+    now = datetime.now(timezone.utc)
+    today_str = now.strftime("%Y-%m-%d")
+
+    # Save to workout logs collection
+    doc = {
+        "user_id": user_id_str,
+        "workout_id": "sensor_session",
+        "title": title,
+        "category": activity_type,
+        "duration_minutes": duration_minutes,
+        "duration_seconds": duration_seconds,
+        "calories": calories,
+        "steps": steps,
+        "distance_km": distance_km,
+        "avg_cadence": avg_cadence,
+        "source": source,
+        "logged_at": now,
+        "date": today_str,
+    }
+    result = await workout_logs_collection.insert_one(doc)
+
+    # If steps were tracked during session, increment today's step count as well
+    if steps > 0:
+        existing_steps = await step_logs_collection.find_one({"user_id": user_id_str, "date": today_str})
+        if existing_steps:
+            await step_logs_collection.update_one(
+                {"_id": existing_steps["_id"]},
+                {"$set": {"steps": existing_steps.get("steps", 0) + steps, "updated_at": now}},
+            )
+        else:
+            await step_logs_collection.insert_one({
+                "user_id": user_id_str,
+                "steps": steps,
+                "date": today_str,
+                "logged_at": now,
+                "updated_at": now,
+            })
+
+    # Award gamification XP
+    gamification_res = None
+    try:
+        gamification_res = await process_user_activity(user_id_str, "workout")
+    except Exception:
+        pass
+
+    return {
+        "id": str(result.inserted_id),
+        "message": "Workout session saved successfully",
+        "session": {
+            "title": title,
+            "activity_type": activity_type,
+            "duration_minutes": duration_minutes,
+            "duration_seconds": duration_seconds,
+            "steps": steps,
+            "distance_km": distance_km,
+            "calories": calories,
+            "date": today_str,
+        },
+        "gamification": gamification_res.model_dump() if gamification_res else None,
+    }
+
+
+@router.get("/sessions/recent")
+async def get_recent_workout_sessions(current_user: dict = Depends(get_current_user)):
+    from app.database import workout_logs_collection
+
+    user_id_str = str(current_user["_id"])
+    logs = await workout_logs_collection.find(
+        {"user_id": user_id_str}
+    ).sort("logged_at", -1).to_list(length=10)
+
+    summaries = []
+    for log in logs:
+        logged_at = log.get("logged_at")
+        date_str = logged_at.strftime("%Y-%m-%d %H:%M") if hasattr(logged_at, "strftime") else str(logged_at or "")
+        summaries.append({
+            "id": str(log["_id"]),
+            "title": log.get("title", "Workout"),
+            "category": log.get("category", "General"),
+            "duration_minutes": log.get("duration_minutes", 0),
+            "duration_seconds": log.get("duration_seconds", log.get("duration_minutes", 0) * 60),
+            "calories": log.get("calories", 0),
+            "steps": log.get("steps", 0),
+            "distance_km": log.get("distance_km", 0.0),
+            "source": log.get("source", "manual"),
+            "date": date_str,
+        })
+    return summaries
+
 
 
 

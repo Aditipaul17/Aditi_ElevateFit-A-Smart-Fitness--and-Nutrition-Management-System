@@ -247,4 +247,29 @@ class YouTubeRecommendationsResponse(BaseModel):
     message: Optional[str] = None
 
 
+class WorkoutSessionCreate(BaseModel):
+    title: str = "Sensor Workout"
+    activity_type: str = "Walking"
+    duration_seconds: int = 0
+    steps: int = 0
+    distance_km: float = 0.0
+    calories: int = 0
+    avg_cadence: Optional[int] = None
+    source: str = "phone_sensor"
+
+
+class WorkoutSummaryItem(BaseModel):
+    id: str
+    title: str
+    category: str
+    duration_minutes: int
+    duration_seconds: int = 0
+    calories: int
+    steps: int = 0
+    distance_km: float = 0.0
+    source: str = "phone_sensor"
+    date: str
+
+
+
 

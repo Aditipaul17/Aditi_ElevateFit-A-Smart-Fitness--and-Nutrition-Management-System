@@ -639,6 +639,93 @@ export async function fetchYouTubeRecommendations(
   return body as YouTubeRecommendationsResponse;
 }
 
+export type WorkoutSessionPayload = {
+  title: string;
+  activity_type: string;
+  duration_seconds: number;
+  steps: number;
+  distance_km: number;
+  calories: number;
+  avg_cadence?: number | null;
+  source?: string;
+};
+
+export type WorkoutSessionResponse = {
+  id: string;
+  message: string;
+  session: {
+    title: string;
+    activity_type: string;
+    duration_minutes: number;
+    duration_seconds: number;
+    steps: number;
+    distance_km: number;
+    calories: number;
+    date: string;
+  };
+  gamification?: ActivityRewardResponse | null;
+};
+
+export type WorkoutSummaryItem = {
+  id: string;
+  title: string;
+  category: string;
+  duration_minutes: number;
+  duration_seconds: number;
+  calories: number;
+  steps: number;
+  distance_km: number;
+  source: string;
+  date: string;
+};
+
+export async function syncTotalSteps(token: string, totalSteps: number): Promise<{ total_steps_today: number }> {
+  const res = await safeFetch(`${API_BASE_URL}/workouts/steps`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ steps: totalSteps, action: "sync_total" }),
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not sync steps."), res.status);
+  }
+  return body as { total_steps_today: number };
+}
+
+export async function saveWorkoutSession(
+  token: string,
+  payload: WorkoutSessionPayload
+): Promise<WorkoutSessionResponse> {
+  const res = await safeFetch(`${API_BASE_URL}/workouts/sessions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not save workout session."), res.status);
+  }
+  return body as WorkoutSessionResponse;
+}
+
+export async function fetchRecentWorkoutSummaries(token: string): Promise<WorkoutSummaryItem[]> {
+  const res = await safeFetch(`${API_BASE_URL}/workouts/sessions/recent`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not load workout summaries."), res.status);
+  }
+  return body as WorkoutSummaryItem[];
+}
+
+
 
 
 

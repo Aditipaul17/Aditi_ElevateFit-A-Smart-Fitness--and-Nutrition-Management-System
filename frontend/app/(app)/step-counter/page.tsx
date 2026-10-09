@@ -19,18 +19,37 @@ import {
   Timer,
   Trophy,
   Plus,
-  Activity,
   Sparkles,
   TrendingUp,
+  Camera,
+  History,
+  Activity,
+  CheckCircle2,
 } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { Card } from "@/components/ui/Card";
 import { useAuth } from "@/lib/AuthContext";
-import { logSteps, fetchTodaySteps, fetchWeeklySteps, WeeklyStepPoint } from "@/lib/api";
+import {
+  logSteps,
+  syncTotalSteps,
+  fetchTodaySteps,
+  fetchWeeklySteps,
+  fetchRecentWorkoutSummaries,
+  WeeklyStepPoint,
+  WorkoutSummaryItem,
+  WorkoutSessionResponse,
+} from "@/lib/api";
+import {
+  checkDailyReset,
+  WorkoutSummary,
+} from "@/lib/sensorPedometer";
+import { SensorWorkoutTracker } from "@/components/SensorWorkoutTracker";
+import { AIPoseTrackerModal } from "@/components/AIPoseTrackerModal";
 
 const STORAGE_KEY_TODAY = "elevatefit_real_steps_today";
 const STORAGE_KEY_GOAL = "elevatefit_step_goal";
 const STORAGE_KEY_WEEKLY = "elevatefit_real_weekly_history";
+const STORAGE_KEY_RECENT_SESSIONS = "elevatefit_cached_recent_sessions";
 
 export default function StepCounterPage() {
   const { token, user } = useAuth();
@@ -39,12 +58,8 @@ export default function StepCounterPage() {
   const [todaySteps, setTodaySteps] = useState<number>(0);
   const [stepGoal, setStepGoal] = useState<number>(10000);
   const [weeklyHistory, setWeeklyHistory] = useState<WeeklyStepPoint[]>([]);
+  const [recentSessions, setRecentSessions] = useState<WorkoutSummaryItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  // Active Pedometer / Motion Sensor status
-  const [isMotionTracking, setIsMotionTracking] = useState<boolean>(false);
-  const [motionPermission, setMotionPermission] = useState<string>("unknown");
-  const [motionSensorsSupported, setMotionSensorsSupported] = useState<boolean>(false);
 
   // Manual Log Modal State
   const [showLogModal, setShowLogModal] = useState<boolean>(false);
@@ -56,14 +71,20 @@ export default function StepCounterPage() {
   const [showGoalModal, setShowGoalModal] = useState<boolean>(false);
   const [goalInput, setGoalInput] = useState<string>("10000");
 
+  // AI Pose Modal State
+  const [showPoseModal, setShowPoseModal] = useState<boolean>(false);
+
   // Chart Metric Filter
   const [chartMetric, setChartMetric] = useState<"steps" | "kcal" | "min">("steps");
 
-  // 1. Initial Load: Restore from LocalStorage or Backend API
+  // 1. Initial Load: Restore from LocalStorage or Backend API with Daily Reset check
   const loadInitialData = useCallback(async () => {
     setIsLoading(true);
     let loadedSteps = 0;
     let loadedGoal = 10000;
+
+    // Check midnight rollover / daily reset
+    const { didReset } = checkDailyReset();
 
     // Restore saved step goal
     const savedGoal = window.localStorage.getItem(STORAGE_KEY_GOAL);
@@ -71,11 +92,17 @@ export default function StepCounterPage() {
     setStepGoal(loadedGoal);
     setGoalInput(String(loadedGoal));
 
-    // Restore cached steps from local storage first for instant response
-    const cachedSteps = window.localStorage.getItem(STORAGE_KEY_TODAY);
-    if (cachedSteps) {
-      loadedSteps = parseInt(cachedSteps, 10) || 0;
-      setTodaySteps(loadedSteps);
+    // Restore cached steps from local storage (or 0 if reset occurred)
+    if (didReset) {
+      window.localStorage.setItem(STORAGE_KEY_TODAY, "0");
+      loadedSteps = 0;
+      setTodaySteps(0);
+    } else {
+      const cachedSteps = window.localStorage.getItem(STORAGE_KEY_TODAY);
+      if (cachedSteps) {
+        loadedSteps = parseInt(cachedSteps, 10) || 0;
+        setTodaySteps(loadedSteps);
+      }
     }
 
     // Default 7-day fallback based on real current date
@@ -116,19 +143,36 @@ export default function StepCounterPage() {
       setWeeklyHistory(fallbackHistory);
     }
 
+    // Restore cached recent sessions
+    const cachedSessions = window.localStorage.getItem(STORAGE_KEY_RECENT_SESSIONS);
+    if (cachedSessions) {
+      try {
+        const parsed = JSON.parse(cachedSessions);
+        if (Array.isArray(parsed)) setRecentSessions(parsed);
+      } catch {}
+    }
+
     // Try sync with API if logged in
     if (token) {
       try {
         const todayData = await fetchTodaySteps(token);
         if (todayData && typeof todayData.steps === "number") {
-          setTodaySteps(todayData.steps);
-          window.localStorage.setItem(STORAGE_KEY_TODAY, String(todayData.steps));
+          // If local steps were greater, keep the higher value to avoid data loss
+          const resolvedSteps = Math.max(loadedSteps, todayData.steps);
+          setTodaySteps(resolvedSteps);
+          window.localStorage.setItem(STORAGE_KEY_TODAY, String(resolvedSteps));
         }
 
         const weeklyData = await fetchWeeklySteps(token);
         if (Array.isArray(weeklyData) && weeklyData.length > 0) {
           setWeeklyHistory(weeklyData);
           window.localStorage.setItem(STORAGE_KEY_WEEKLY, JSON.stringify(weeklyData));
+        }
+
+        const sessions = await fetchRecentWorkoutSummaries(token);
+        if (Array.isArray(sessions)) {
+          setRecentSessions(sessions);
+          window.localStorage.setItem(STORAGE_KEY_RECENT_SESSIONS, JSON.stringify(sessions));
         }
       } catch (err) {
         console.warn("Using offline step storage:", err);
@@ -141,77 +185,107 @@ export default function StepCounterPage() {
     loadInitialData();
   }, [loadInitialData]);
 
-  // Check if browser Motion Sensor (Accelerometer) is available
-  useEffect(() => {
-    if (typeof window !== "undefined" && "DeviceMotionEvent" in window) {
-      setMotionSensorsSupported(true);
-    }
-  }, []);
+  // Handle adding steps to local state & backend with deduplication protection
+  const handleAddSteps = useCallback(
+    async (addedCount: number) => {
+      if (addedCount <= 0) return;
 
-  // Handle adding steps to local state & backend
-  const handleAddSteps = useCallback(async (addedCount: number) => {
-    if (addedCount <= 0) return;
+      // Handle daily reset check dynamically
+      checkDailyReset();
 
-    setTodaySteps((prev) => {
-      const nextTotal = prev + addedCount;
-      window.localStorage.setItem(STORAGE_KEY_TODAY, String(nextTotal));
+      setTodaySteps((prev) => {
+        const nextTotal = prev + addedCount;
+        window.localStorage.setItem(STORAGE_KEY_TODAY, String(nextTotal));
 
-      // Update today's bar in weekly history graph
-      setWeeklyHistory((oldHistory) => {
-        const updated = oldHistory.map((item) => {
-          if (item.is_today) {
-            return {
-              ...item,
-              steps: nextTotal,
-              kcal: Math.round(nextTotal * 0.045),
-              min: Math.round(nextTotal * 0.005),
-            };
-          }
-          return item;
+        // Update today's bar in weekly history graph
+        setWeeklyHistory((oldHistory) => {
+          const updated = oldHistory.map((item) => {
+            if (item.is_today) {
+              return {
+                ...item,
+                steps: nextTotal,
+                kcal: Math.round(nextTotal * 0.045),
+                min: Math.round(nextTotal * 0.005),
+              };
+            }
+            return item;
+          });
+          window.localStorage.setItem(STORAGE_KEY_WEEKLY, JSON.stringify(updated));
+          return updated;
         });
-        window.localStorage.setItem(STORAGE_KEY_WEEKLY, JSON.stringify(updated));
-        return updated;
+
+        // Sync to backend using deduplicated total sync
+        if (token) {
+          syncTotalSteps(token, nextTotal).catch((err) => {
+            console.warn("Backend step sync error:", err);
+          });
+        }
+
+        return nextTotal;
       });
+    },
+    [token]
+  );
 
-      return nextTotal;
-    });
-
-    // Sync to backend if token available
-    if (token) {
-      try {
-        await logSteps(token, addedCount);
-      } catch (err) {
-        console.warn("Backend step sync failed, saved locally:", err);
-      }
-    }
-  }, [token]);
-
-  // Motion Sensor Pedometer Algorithm (detects acceleration spikes)
-  useEffect(() => {
-    if (!isMotionTracking) return;
-
-    let lastAccel = 0;
-    const threshold = 11.5; // Acceleration force threshold for human stride
-    let lastStepTime = 0;
-
-    const handleMotion = (event: DeviceMotionEvent) => {
-      const acc = event.accelerationIncludingGravity;
-      if (!acc || acc.x === null || acc.y === null || acc.z === null) return;
-
-      const totalAccel = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
-      const delta = Math.abs(totalAccel - lastAccel);
-      const now = Date.now();
-
-      if (delta > threshold && now - lastStepTime > 320) {
-        lastStepTime = now;
-        handleAddSteps(1);
-      }
-      lastAccel = totalAccel;
+  // Handle completed sensor workout session
+  const handleWorkoutSessionCompleted = (
+    summary: WorkoutSummary,
+    apiResponse?: WorkoutSessionResponse
+  ) => {
+    // Add to recent sessions list
+    const newSessionItem: WorkoutSummaryItem = {
+      id: apiResponse?.id || `local_${Date.now()}`,
+      title: summary.title,
+      category: summary.activityType,
+      duration_minutes: summary.durationMinutes,
+      duration_seconds: summary.durationSeconds,
+      calories: summary.calories,
+      steps: summary.steps,
+      distance_km: summary.distanceKm,
+      source: "phone_sensor",
+      date: new Date().toISOString().replace("T", " ").slice(0, 16),
     };
 
-    window.addEventListener("devicemotion", handleMotion);
-    return () => window.removeEventListener("devicemotion", handleMotion);
-  }, [isMotionTracking, handleAddSteps]);
+    setRecentSessions((prev) => {
+      const updated = [newSessionItem, ...prev.slice(0, 9)];
+      window.localStorage.setItem(STORAGE_KEY_RECENT_SESSIONS, JSON.stringify(updated));
+      return updated;
+    });
+
+    // Refresh weekly history if steps were tracked
+    if (summary.steps > 0 && token) {
+      fetchWeeklySteps(token)
+        .then((data) => {
+          if (Array.isArray(data) && data.length > 0) {
+            setWeeklyHistory(data);
+            window.localStorage.setItem(STORAGE_KEY_WEEKLY, JSON.stringify(data));
+          }
+        })
+        .catch(() => {});
+    }
+  };
+
+  // Handle AI Pose workout completion
+  const handleAIPoseCompleted = (exercise: string, reps: number, calories: number) => {
+    const newSessionItem: WorkoutSummaryItem = {
+      id: `pose_${Date.now()}`,
+      title: `${exercise} (${reps} reps)`,
+      category: "AI Pose Tracking",
+      duration_minutes: Math.max(1, Math.round(reps / 12)),
+      duration_seconds: Math.round(reps * 5),
+      calories,
+      steps: 0,
+      distance_km: 0,
+      source: "mediapipe_pose",
+      date: new Date().toISOString().replace("T", " ").slice(0, 16),
+    };
+
+    setRecentSessions((prev) => {
+      const updated = [newSessionItem, ...prev.slice(0, 9)];
+      window.localStorage.setItem(STORAGE_KEY_RECENT_SESSIONS, JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   // Submit manual step log
   const handleManualLogSubmit = async (e: React.FormEvent) => {
@@ -234,29 +308,6 @@ export default function StepCounterPage() {
       setStepGoal(val);
       window.localStorage.setItem(STORAGE_KEY_GOAL, String(val));
       setShowGoalModal(false);
-    }
-  };
-
-  // Enable Device Motion Permission (iOS / Chrome Web Sensor API)
-  const requestMotionPermission = async () => {
-    if (
-      typeof window !== "undefined" &&
-      typeof (DeviceMotionEvent as any).requestPermission === "function"
-    ) {
-      try {
-        const response = await (DeviceMotionEvent as any).requestPermission();
-        if (response === "granted") {
-          setMotionPermission("granted");
-          setIsMotionTracking(true);
-        } else {
-          setMotionPermission("denied");
-          alert("Motion sensor permission was denied. You can still log steps manually.");
-        }
-      } catch (e) {
-        console.error("Permission request failed", e);
-      }
-    } else {
-      setIsMotionTracking(!isMotionTracking);
     }
   };
 
@@ -287,30 +338,22 @@ export default function StepCounterPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-3xl font-display font-bold text-ink dark:text-white flex items-center gap-3">
-                Step Counter & Activity
+                Step Counter &amp; Activity
               </h1>
               <p className="text-ink-muted mt-1">
-                Track your daily step count, distance, active minutes, and weekly activity trends.
+                Real-time phone sensor fitness tracking, daily step goals, and active workout sessions.
               </p>
             </div>
 
             {/* Action Buttons */}
             <div className="flex flex-wrap items-center gap-3">
-              {motionSensorsSupported && (
-                <button
-                  onClick={requestMotionPermission}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-full border text-xs font-semibold transition-all ${
-                    isMotionTracking
-                      ? "bg-secondary/20 border-secondary text-secondary animate-pulse"
-                      : "border-black/10 dark:border-white/15 text-ink dark:text-white hover:border-primary"
-                  }`}
-                >
-                  <Activity size={16} />
-                  <span>
-                    {isMotionTracking ? "Pedometer Active" : "Enable Motion Sensor"}
-                  </span>
-                </button>
-              )}
+              <button
+                onClick={() => setShowPoseModal(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-semibold hover:bg-primary hover:text-white transition-all shadow-xs"
+              >
+                <Camera size={16} />
+                <span>AI Pose Rep Counter</span>
+              </button>
 
               <button
                 onClick={() => setShowLogModal(true)}
@@ -329,6 +372,13 @@ export default function StepCounterPage() {
               </button>
             </div>
           </div>
+
+          {/* SENSOR WORKOUT TRACKER SECTION (Start, Pause, Resume, End Controls) */}
+          <SensorWorkoutTracker
+            token={token}
+            onStepLogged={handleAddSteps}
+            onWorkoutCompleted={handleWorkoutSessionCompleted}
+          />
 
           {/* MAIN 2-COLUMN GRID */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -509,7 +559,12 @@ export default function StepCounterPage() {
                 <div className="h-64 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={weeklyHistory} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-black/5 dark:text-white/10" />
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        stroke="currentColor"
+                        className="text-black/5 dark:text-white/10"
+                      />
                       <XAxis
                         dataKey="day"
                         stroke="#6B7280"
@@ -573,10 +628,70 @@ export default function StepCounterPage() {
                   </span>
                 </div>
               </Card>
+
+              {/* RECENT WORKOUT SUMMARIES CARD */}
+              <Card>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <History size={18} className="text-primary" />
+                    <h3 className="text-base font-display font-bold text-ink dark:text-white">
+                      Recent Workout Summaries
+                    </h3>
+                  </div>
+                  <span className="text-xs text-ink-muted font-medium">
+                    {recentSessions.length} recorded
+                  </span>
+                </div>
+
+                {recentSessions.length === 0 ? (
+                  <div className="p-6 text-center rounded-xl bg-black/5 dark:bg-white/5 border border-dashed border-black/10 dark:border-white/10 text-xs text-ink-muted">
+                    No workout sessions recorded yet. Start a session above to record your walk or run!
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                    {recentSessions.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between p-3 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 text-xs hover:border-primary/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                            <Activity size={16} />
+                          </span>
+                          <div>
+                            <p className="font-semibold text-ink dark:text-white">{item.title}</p>
+                            <p className="text-[11px] text-ink-muted">
+                              {item.date} • {item.category}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <p className="font-mono font-bold text-ink dark:text-white">
+                            {item.duration_minutes} min • {item.calories} kcal
+                          </p>
+                          {item.steps > 0 && (
+                            <p className="text-[11px] text-primary font-medium">
+                              {item.steps.toLocaleString()} steps ({item.distance_km} km)
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
             </div>
           </div>
         </div>
       </main>
+
+      {/* MODAL: AI POSE EXERCISE TRACKER */}
+      <AIPoseTrackerModal
+        isOpen={showPoseModal}
+        onClose={() => setShowPoseModal(false)}
+        onWorkoutLogged={handleAIPoseCompleted}
+      />
 
       {/* MODAL: MANUAL STEP LOGGING */}
       <AnimatePresence>
@@ -699,4 +814,3 @@ export default function StepCounterPage() {
     </>
   );
 }
-

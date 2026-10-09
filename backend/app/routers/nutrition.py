@@ -1,7 +1,7 @@
 import base64
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, Query, File, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, Query, File, UploadFile, HTTPException, Request
 from pydantic import BaseModel
 
 from app.database import meals_collection
@@ -508,35 +508,55 @@ async def get_nutrition_recommendations(current_user: dict = Depends(get_current
 
 @router.post("/scan-meal", response_model=MealScanResponse)
 async def scan_meal_image(
-    file: Optional[UploadFile] = File(None),
-    payload: Optional[ImageScanPayload] = None,
+    request: Request,
     current_user: dict = Depends(get_current_user),
 ):
     """Identifies food items and estimates macros from uploaded/captured meal image."""
     image_bytes = None
     mime_type = "image/jpeg"
+    mult = 1.0
 
-    if file and file.filename:
-        image_bytes = await file.read()
-        if file.content_type:
-            mime_type = file.content_type
-    elif payload and payload.image_base64:
-        raw_b64 = payload.image_base64
-        if "," in raw_b64:
-            header, raw_b64 = raw_b64.split(",", 1)
-            if "png" in header:
-                mime_type = "image/png"
-            elif "webp" in header:
-                mime_type = "image/webp"
+    content_type = request.headers.get("content-type", "").lower()
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        uploaded_file = form.get("file")
+        if uploaded_file and hasattr(uploaded_file, "read"):
+            image_bytes = await uploaded_file.read()
+            if hasattr(uploaded_file, "content_type") and uploaded_file.content_type:
+                mime_type = uploaded_file.content_type
+        mult_val = form.get("portion_multiplier")
+        if mult_val:
+            try:
+                mult = float(mult_val)
+            except ValueError:
+                mult = 1.0
+    else:
         try:
-            image_bytes = base64.b64decode(raw_b64)
+            body = await request.json()
         except Exception:
-            raise HTTPException(status_code=400, detail="Invalid base64 image data")
+            body = {}
+        raw_b64 = body.get("image_base64", "")
+        if raw_b64:
+            if "," in raw_b64:
+                header, raw_b64 = raw_b64.split(",", 1)
+                if "png" in header:
+                    mime_type = "image/png"
+                elif "webp" in header:
+                    mime_type = "image/webp"
+            try:
+                image_bytes = base64.b64decode(raw_b64)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid base64 image data")
+        mult_val = body.get("portion_multiplier")
+        if mult_val:
+            try:
+                mult = float(mult_val)
+            except ValueError:
+                mult = 1.0
 
     if not image_bytes:
         raise HTTPException(status_code=400, detail="No image file or base64 data provided")
 
-    mult = payload.portion_multiplier if (payload and payload.portion_multiplier) else 1.0
     res = await analyze_meal_image_with_ai(image_bytes, mime_type)
 
     if mult != 1.0:

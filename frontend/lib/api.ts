@@ -81,6 +81,8 @@ export type AuthUser = {
   food_preferences?: string[] | null;
   fitness_limitations?: string[] | null;
   onboarding_completed?: boolean | null;
+  photo_url?: string | null;
+  auth_provider?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -90,6 +92,13 @@ export type SignupPayload = {
   email: string;
   password: string;
   confirm_password: string;
+};
+
+export type GoogleAuthPayload = {
+  email: string;
+  name?: string | null;
+  id_token?: string | null;
+  photo_url?: string | null;
 };
 
 export type Token = {
@@ -134,6 +143,20 @@ export async function login(email: string, password: string): Promise<Token> {
   }
   return body as Token;
 }
+
+export async function loginWithGoogle(payload: GoogleAuthPayload): Promise<Token> {
+  const res = await safeFetch(`${API_BASE_URL}/auth/google`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Google authentication failed."), res.status);
+  }
+  return body as Token;
+}
+
 
 export async function fetchCurrentUser(token: string): Promise<AuthUser> {
   const res = await safeFetch(`${API_BASE_URL}/auth/me`, {

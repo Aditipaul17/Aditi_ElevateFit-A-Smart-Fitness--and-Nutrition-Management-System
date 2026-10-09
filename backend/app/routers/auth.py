@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime, timezone
 
 from bson import ObjectId
@@ -12,7 +13,8 @@ from app.core.security import (
     verify_password,
 )
 from app.database import users_collection
-from app.models.schemas import Token, UserCreate, UserOut, UserProfileUpdate
+from app.models.schemas import GoogleAuthRequest, Token, UserCreate, UserOut, UserProfileUpdate
+
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -37,9 +39,12 @@ def _serialize_user(user: dict) -> UserOut:
         food_preferences=user.get("food_preferences"),
         fitness_limitations=user.get("fitness_limitations"),
         onboarding_completed=user.get("onboarding_completed", False),
+        photo_url=user.get("photo_url"),
+        auth_provider=user.get("auth_provider"),
         created_at=user.get("created_at"),
         updated_at=user.get("updated_at"),
     )
+
 
 
 
@@ -141,6 +146,64 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
     token = create_access_token(subject=str(user["_id"]))
     return Token(access_token=token)
+
+
+@router.post("/google", response_model=Token)
+async def google_auth(payload: GoogleAuthRequest):
+    normalized_email = payload.email.lower().strip()
+    user = await users_collection.find_one({"email": normalized_email})
+
+    now = datetime.now(timezone.utc)
+
+    if not user:
+        name = (payload.name or "").strip() or normalized_email.split("@")[0]
+        random_pw = secrets.token_urlsafe(32)
+        doc = {
+            "name": name,
+            "email": normalized_email,
+            "hashed_password": hash_password(random_pw),
+            "auth_provider": "google",
+            "photo_url": payload.photo_url,
+            "age": None,
+            "gender": None,
+            "height": None,
+            "weight": None,
+            "fitness_goal": None,
+            "activity_level": None,
+            "dietary_preference": None,
+            "workout_experience": None,
+            "equipment": None,
+            "preferred_workout_type": None,
+            "available_workout_time": None,
+            "food_preferences": None,
+            "fitness_limitations": None,
+            "onboarding_completed": False,
+            "created_at": now,
+            "updated_at": now,
+        }
+        try:
+            result = await users_collection.insert_one(doc)
+            user_id = str(result.inserted_id)
+        except Exception:
+            user = await users_collection.find_one({"email": normalized_email})
+            if user:
+                user_id = str(user["_id"])
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Could not create user account",
+                )
+    else:
+        user_id = str(user["_id"])
+        if payload.photo_url and not user.get("photo_url"):
+            await users_collection.update_one(
+                {"_id": user["_id"]},
+                {"$set": {"photo_url": payload.photo_url, "updated_at": now}},
+            )
+
+    token = create_access_token(subject=user_id)
+    return Token(access_token=token)
+
 
 
 @router.get("/me", response_model=UserOut)

@@ -7,6 +7,8 @@ import { Loader2, AlertCircle } from "lucide-react";
 import { AuthShell } from "@/components/AuthShell";
 import { ApiError, getErrorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/AuthContext";
+import { formatFirebaseAuthError } from "@/lib/firebase";
+
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -57,10 +59,11 @@ export default function SignupPage() {
       await signup(name.trim(), email.trim(), password, confirmPassword);
       router.push("/dashboard");
     } catch (err) {
-      setError(getErrorMessage(err, "Could not create your account. Please try again."));
+      setError(formatFirebaseAuthError(err, getErrorMessage(err, "Could not create your account. Please try again.")));
     } finally {
       setSubmitting(false);
     }
+
   }
 
   return (

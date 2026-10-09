@@ -68,8 +68,11 @@ class UserOut(BaseModel):
     food_preferences: Optional[list[str]] = None
     fitness_limitations: Optional[list[str]] = None
     onboarding_completed: Optional[bool] = False
+    photo_url: Optional[str] = None
+    auth_provider: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
 
 
 class StepLogCreate(BaseModel):
@@ -88,6 +91,14 @@ class StepLogOut(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class GoogleAuthRequest(BaseModel):
+    id_token: Optional[str] = None
+    email: EmailStr
+    name: Optional[str] = None
+    photo_url: Optional[str] = None
+
 
 
 class WorkoutOut(BaseModel):

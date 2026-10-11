@@ -37,6 +37,7 @@ def _serialize_user(user: dict) -> UserOut:
         preferred_workout_type=user.get("preferred_workout_type"),
         available_workout_time=user.get("available_workout_time"),
         food_preferences=user.get("food_preferences"),
+        allergies=user.get("allergies") if user.get("allergies") is not None else user.get("food_preferences"),
         fitness_limitations=user.get("fitness_limitations"),
         onboarding_completed=user.get("onboarding_completed", False),
         photo_url=user.get("photo_url"),
@@ -117,6 +118,7 @@ async def register(payload: UserCreate):
         "preferred_workout_type": None,
         "available_workout_time": None,
         "food_preferences": None,
+        "allergies": None,
         "fitness_limitations": None,
         "onboarding_completed": False,
         "created_at": now,
@@ -218,6 +220,10 @@ async def update_current_user(
 ):
     updates = {k: v for k, v in payload.model_dump(exclude_unset=True).items()}
     if updates:
+        if "allergies" in updates and "food_preferences" not in updates and updates["allergies"] is not None:
+            updates["food_preferences"] = updates["allergies"]
+        elif "food_preferences" in updates and "allergies" not in updates and updates["food_preferences"] is not None:
+            updates["allergies"] = updates["food_preferences"]
         now = datetime.now(timezone.utc)
         updates["updated_at"] = now
         mongo_update: dict = {"$set": updates}

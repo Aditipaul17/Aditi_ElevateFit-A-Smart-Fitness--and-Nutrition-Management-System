@@ -24,6 +24,7 @@ import {
   ChevronUp,
   X,
   Award,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -31,6 +32,8 @@ import {
   fetchNutritionRecommendations,
   searchFoods,
   logMeal,
+  deleteMeal,
+  recalculatePortion,
   scanMealImage,
   ApiError,
   NutritionTargets,
@@ -276,6 +279,18 @@ export default function NutritionPage() {
   const [scanProtein, setScanProtein] = useState("");
   const [scanCarbs, setScanCarbs] = useState("");
   const [scanFat, setScanFat] = useState("");
+  const [scanFiber, setScanFiber] = useState("");
+
+  // Remaining Nutritional Needs state
+  const [remainingTargets, setRemainingTargets] = useState<{
+    calories: number;
+    protein_g: number;
+    carbs_g: number;
+    fat_g: number;
+    fiber_g: number;
+  } | null>(null);
+  const [remainingSuggestions, setRemainingSuggestions] = useState<MealRecommendation[]>([]);
+  const [smartAdvice, setSmartAdvice] = useState<string>("");
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -323,6 +338,15 @@ export default function NutritionPage() {
         }
         if (recsRes?.recommended_meals && recsRes.recommended_meals.length > 0) {
           setRecommendedMeals(recsRes.recommended_meals);
+        }
+        if (recsRes?.remaining_targets) {
+          setRemainingTargets(recsRes.remaining_targets);
+        }
+        if (recsRes?.remaining_suggestions) {
+          setRemainingSuggestions(recsRes.remaining_suggestions);
+        }
+        if (recsRes?.smart_advice) {
+          setSmartAdvice(recsRes.smart_advice);
         }
         if (recsRes?.evidence_sources) {
           setEvidenceSources(recsRes.evidence_sources);
@@ -441,6 +465,7 @@ export default function NutritionPage() {
       setScanProtein(String(res.protein_g));
       setScanCarbs(String(res.carbs_g));
       setScanFat(String(res.fat_g));
+      setScanFiber(String(res.fiber_g || 0));
     } catch (err) {
       setErrorMsg("Failed to identify meal. Please check network connection or try a clearer food photo.");
     } finally {
@@ -448,13 +473,31 @@ export default function NutritionPage() {
     }
   };
 
-  const updatePortionMultiplier = (multiplier: number) => {
+  const updatePortionMultiplier = async (multiplier: number) => {
     setPortionMultiplier(multiplier);
-    if (scannedResult) {
+    if (scannedResult && token) {
+      try {
+        const recalculated = await recalculatePortion(
+          token,
+          scannedResult.class_label || scannedResult.food_name,
+          multiplier
+        );
+        setScanCalories(String(recalculated.calories));
+        setScanProtein(String(recalculated.protein_g));
+        setScanCarbs(String(recalculated.carbs_g));
+        setScanFat(String(recalculated.fat_g));
+        setScanFiber(String(recalculated.fiber_g || 0));
+        setScanPortion(recalculated.portion_size);
+        return;
+      } catch {
+        // Fallback proportional calculation
+      }
       setScanCalories(String(Math.round(scannedResult.calories * multiplier)));
       setScanProtein(String((scannedResult.protein_g * multiplier).toFixed(1)));
       setScanCarbs(String((scannedResult.carbs_g * multiplier).toFixed(1)));
       setScanFat(String((scannedResult.fat_g * multiplier).toFixed(1)));
+      setScanFiber(String(((scannedResult.fiber_g || 3.0) * multiplier).toFixed(1)));
+      setScanPortion(`${multiplier}x portion`);
     }
   };
 
@@ -469,6 +512,8 @@ export default function NutritionPage() {
         protein_g: parseFloat(scanProtein) || 0,
         carbs_g: parseFloat(scanCarbs) || 0,
         fat_g: parseFloat(scanFat) || 0,
+        fiber_g: parseFloat(scanFiber) || 0,
+        portion_size: scanPortion || undefined,
       });
 
       if (res.gamification) {
@@ -505,6 +550,58 @@ export default function NutritionPage() {
         setErrorMsg(err.message);
       } else {
         setErrorMsg("Could not log scanned meal. Please try again.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteMeal = async (mealId: string) => {
+    if (!token || !mealId) return;
+    try {
+      await deleteMeal(token, mealId);
+      setSuccessMsg("Meal removed from diary.");
+      loadMealsAndTargets();
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err) {
+      setErrorMsg("Failed to delete meal.");
+    }
+  };
+
+  const handleQuickLog = async (meal: MealRecommendation) => {
+    if (!token) return;
+    setSubmitting(true);
+    setErrorMsg(null);
+    try {
+      const res = await logMeal(token, {
+        name: meal.items || meal.name,
+        calories: meal.calories,
+        protein_g: meal.protein_g,
+        carbs_g: meal.carbs_g,
+        fat_g: meal.fat_g,
+        fiber_g: meal.fiber_g || 0,
+      });
+
+      if (res.gamification && res.gamification.xp_gained > 0) {
+        setGamiToasts((prev) => [
+          ...prev,
+          {
+            id: Math.random().toString(),
+            type: "xp",
+            title: `+${res.gamification?.xp_gained} XP 🎉`,
+            description: "Meal logged!",
+          },
+        ]);
+      }
+
+      setSuccessMsg(`Logged "${meal.name}" to today's diary!`);
+      loadMealsAndTargets();
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setErrorMsg(err.message);
+      } else {
+        setErrorMsg("Failed to log meal.");
       }
     } finally {
       setSubmitting(false);
@@ -804,6 +901,78 @@ export default function NutritionPage() {
           </Card>
         </div>
 
+        {/* Personalized Meal Suggestions Based on Remaining Nutritional Needs */}
+        <Card className="space-y-4 border border-primary/20 bg-emerald-950/5 dark:bg-card-dark">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-display font-bold text-ink dark:text-white flex items-center gap-2">
+                <Sparkles size={18} className="text-primary" /> Personalized Meal Suggestions for Remaining Needs
+                <span className="text-[10px] font-bold bg-primary text-white px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  Remaining Deficit Target
+                </span>
+              </h2>
+              <p className="text-xs text-ink-muted mt-1">
+                Authentic Indian and balanced meal combinations formulated to fulfill your remaining{" "}
+                <strong className="text-primary">
+                  {remainingTargets ? remainingTargets.calories : remainingCalories} kcal
+                </strong>{" "}
+                and{" "}
+                <strong className="text-primary">
+                  {remainingTargets
+                    ? `${remainingTargets.protein_g}g`
+                    : `${Math.max(0, targets.protein_g - loggedTotals.protein_g)}g`} Protein
+                </strong>{" "}
+                deficit today.
+              </p>
+            </div>
+          </div>
+
+          {smartAdvice && (
+            <div className="rounded-xl bg-primary/10 border border-primary/20 p-3 text-xs text-primary dark:text-emerald-300 flex items-start gap-2">
+              <Info size={16} className="mt-0.5 shrink-0" />
+              <span>{smartAdvice}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {(remainingSuggestions.length > 0 ? remainingSuggestions : displayMeals.slice(0, 3)).map((sug) => (
+              <div
+                key={sug.id}
+                className="rounded-2xl border border-black/10 dark:border-white/10 p-4 bg-white dark:bg-surface-dark hover:border-primary transition-all flex flex-col justify-between shadow-sm"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-primary">
+                      {sug.name}
+                    </span>
+                    <span className="text-xs text-ink-muted">{sug.time}</span>
+                  </div>
+                  <h4 className="font-semibold text-sm text-ink dark:text-white mb-2 leading-snug">
+                    {sug.items}
+                  </h4>
+                </div>
+                <div className="pt-3 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-bold text-ink dark:text-white block">
+                      {sug.calories} kcal
+                    </span>
+                    <span className="text-[11px] text-ink-muted">
+                      P: {sug.protein_g}g • C: {sug.carbs_g}g • F: {sug.fat_g}g
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleQuickLog(sug)}
+                    disabled={submitting}
+                    className="text-xs font-bold text-white bg-primary hover:bg-secondary px-3 py-1.5 rounded-xl transition-all shadow-sm flex items-center gap-1 disabled:opacity-50"
+                  >
+                    <Plus size={13} /> Quick Log
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
         {/* Logged Meals & Recommended Meal Plans */}
         <Card>
           <h2 className="text-lg font-display font-semibold text-ink dark:text-white mb-4">
@@ -819,14 +988,31 @@ export default function NutritionPage() {
               {loggedMeals.map((m, idx) => (
                 <div
                   key={m._id || idx}
-                  className="rounded-xl border border-black/10 dark:border-white/10 p-4 bg-black/5 dark:bg-white/5"
+                  className="rounded-xl border border-black/10 dark:border-white/10 p-4 bg-black/5 dark:bg-white/5 flex flex-col justify-between"
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <h3 className="font-semibold text-ink dark:text-white">{m.name}</h3>
-                    <span className="text-sm font-semibold text-primary">{m.calories} kcal</span>
+                  <div className="flex items-start justify-between mb-1">
+                    <div>
+                      <h3 className="font-semibold text-ink dark:text-white">{m.name}</h3>
+                      {m.portion_size && (
+                        <span className="text-[11px] text-ink-muted block">{m.portion_size}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-primary">{m.calories} kcal</span>
+                      {m._id && (
+                        <button
+                          onClick={() => handleDeleteMeal(m._id)}
+                          title="Delete meal"
+                          className="text-ink-muted hover:text-red-500 transition-colors p-1"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-xs text-ink-muted">
+                  <p className="text-xs text-ink-muted mt-1">
                     P: {m.protein_g}g • C: {m.carbs_g}g • F: {m.fat_g}g
+                    {m.fiber_g ? ` • Fiber: ${m.fiber_g}g` : ""}
                   </p>
                 </div>
               ))}
@@ -1301,13 +1487,18 @@ export default function NutritionPage() {
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-primary flex items-center gap-1">
-                        <Sparkles size={12} /> ML Detection Complete
+                        <Sparkles size={12} /> MobileNetV2 ML Recognition
                       </span>
                       <span className="text-[10px] font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
                         {Math.round(scannedResult.confidence * 100)}% Confidence
                       </span>
                     </div>
                     <p className="text-xs text-ink-muted mt-1 leading-snug">{scannedResult.breakdown}</p>
+                    {scannedResult.reliable_source && (
+                      <span className="inline-block text-[10px] text-emerald-600 dark:text-emerald-400 font-medium mt-1">
+                        ✓ {scannedResult.reliable_source}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -1315,15 +1506,18 @@ export default function NutritionPage() {
                 <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
                   <Info size={16} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
                   <span>
-                    <strong>Review & Adjust Required:</strong> Image-based calorie estimation is an ML estimate. Please review and edit the detected food items and portion sizes below before logging to your food diary.
+                    <strong>Portion &amp; Macro Verification:</strong> Estimates are cross-validated against ICMR IFCT and USDA nutrition composition data. Adjust portion size or edit values below if needed.
                   </span>
                 </div>
 
                 {/* Quick Portion Multipliers */}
                 <div>
-                  <label className="block text-xs font-semibold text-ink dark:text-white mb-1.5">
-                    Portion Multiplier Scale
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold text-ink dark:text-white">
+                      Portion Size Multiplier
+                    </label>
+                    <span className="text-xs font-bold text-primary">{portionMultiplier}x serving</span>
+                  </div>
                   <div className="grid grid-cols-4 gap-2">
                     {[0.5, 1.0, 1.5, 2.0].map((m) => (
                       <button
@@ -1359,7 +1553,7 @@ export default function NutritionPage() {
 
                   <div>
                     <label className="block text-xs font-semibold text-ink dark:text-white mb-1">
-                      Serving & Portion Size
+                      Serving &amp; Portion Size
                     </label>
                     <input
                       type="text"
@@ -1391,22 +1585,22 @@ export default function NutritionPage() {
                         step="0.1"
                         value={scanProtein}
                         onChange={(e) => setScanProtein(e.target.value)}
-                        className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
+                        className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary font-semibold"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-2">
                     <div>
                       <label className="block text-xs font-semibold text-ink dark:text-white mb-1">
-                        Carbohydrates (g)
+                        Carbs (g)
                       </label>
                       <input
                         type="number"
                         step="0.1"
                         value={scanCarbs}
                         onChange={(e) => setScanCarbs(e.target.value)}
-                        className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
+                        className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-2.5 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
                       />
                     </div>
                     <div>
@@ -1418,7 +1612,19 @@ export default function NutritionPage() {
                         step="0.1"
                         value={scanFat}
                         onChange={(e) => setScanFat(e.target.value)}
-                        className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
+                        className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-2.5 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-ink dark:text-white mb-1">
+                        Fiber (g)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={scanFiber}
+                        onChange={(e) => setScanFiber(e.target.value)}
+                        className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-2.5 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
                       />
                     </div>
                   </div>

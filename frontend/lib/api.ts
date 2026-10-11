@@ -79,6 +79,7 @@ export type AuthUser = {
   preferred_workout_type?: string | null;
   available_workout_time?: string | null;
   food_preferences?: string[] | null;
+  allergies?: string[] | null;
   fitness_limitations?: string[] | null;
   onboarding_completed?: boolean | null;
   photo_url?: string | null;
@@ -184,6 +185,7 @@ export type ProfileUpdatePayload = {
   preferred_workout_type?: string | null;
   available_workout_time?: string | null;
   food_preferences?: string[] | null;
+  allergies?: string[] | null;
   fitness_limitations?: string[] | null;
   onboarding_completed?: boolean | null;
 };
@@ -285,12 +287,40 @@ export async function fetchAnalytics(token: string): Promise<AnalyticsSummary> {
   return body as AnalyticsSummary;
 }
 
+export type WeightCheckinResponse = {
+  message: string;
+  current_weight: number;
+  weight_trend: WeightPoint[];
+};
+
+export async function logWeightCheckin(
+  token: string,
+  weight: number,
+  date?: string
+): Promise<WeightCheckinResponse> {
+  const res = await safeFetch(`${API_BASE_URL}/analytics/weight-checkin`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ weight, date }),
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not log weight check-in."), res.status);
+  }
+  return body as WeightCheckinResponse;
+}
+
 export type MealLogPayload = {
   name: string;
   calories: number;
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  fiber_g?: number;
+  portion_size?: string;
 };
 
 export async function logMeal(token: string, payload: MealLogPayload): Promise<{ id: string; gamification?: ActivityRewardResponse }> {
@@ -307,6 +337,17 @@ export async function logMeal(token: string, payload: MealLogPayload): Promise<{
     throw new ApiError(extractErrorMessage(body, "Could not log meal."), res.status);
   }
   return body as { id: string; gamification?: ActivityRewardResponse };
+}
+
+export async function deleteMeal(token: string, mealId: string): Promise<void> {
+  const res = await safeFetch(`${API_BASE_URL}/nutrition/meals/${mealId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await parseJsonSafe(res);
+    throw new ApiError(extractErrorMessage(body, "Could not delete meal."), res.status);
+  }
 }
 
 export async function fetchTodayMeals(token: string): Promise<{
@@ -356,6 +397,10 @@ export type NutritionRecommendationsResponse = {
   evidence_sources?: EvidenceSource[];
   guidance_notes?: string[];
   user_metrics_summary?: Record<string, string>;
+  consumed_today?: { calories: number; protein_g: number; carbs_g: number; fat_g: number; fiber_g: number };
+  remaining_targets?: { calories: number; protein_g: number; carbs_g: number; fat_g: number; fiber_g: number };
+  remaining_suggestions?: MealRecommendation[];
+  smart_advice?: string;
 };
 
 export type FoodItem = {
@@ -364,6 +409,7 @@ export type FoodItem = {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  fiber_g?: number;
   dietary_tags: string[];
 };
 
@@ -374,9 +420,36 @@ export type MealScanResponse = {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  fiber_g?: number;
   confidence: number;
   breakdown: string;
+  reliable_source?: string;
+  class_label?: string;
+  portion_multiplier?: number;
 };
+
+export async function recalculatePortion(
+  token: string,
+  classLabelOrName: string,
+  portionMultiplier: number
+): Promise<MealScanResponse> {
+  const res = await safeFetch(`${API_BASE_URL}/nutrition/recalculate-portion`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      class_label: classLabelOrName,
+      portion_multiplier: portionMultiplier,
+    }),
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not recalculate portion macros."), res.status);
+  }
+  return body as MealScanResponse;
+}
 
 export async function fetchNutritionRecommendations(
   token: string

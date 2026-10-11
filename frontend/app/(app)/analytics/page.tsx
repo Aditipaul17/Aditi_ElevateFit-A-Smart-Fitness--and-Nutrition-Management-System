@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, AlertCircle, TrendingUp, Dumbbell, Utensils, Target, Clock } from "lucide-react";
+import {
+  Loader2,
+  AlertCircle,
+  TrendingUp,
+  Dumbbell,
+  Utensils,
+  Target,
+  Clock,
+  Scale,
+  Plus,
+  CheckCircle2,
+} from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { Card } from "@/components/ui/Card";
 import { WeeklyActivityChart } from "@/components/WeeklyActivityChart";
@@ -15,13 +26,24 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useAuth } from "@/lib/AuthContext";
-import { AnalyticsSummary, fetchAnalytics, ApiError } from "@/lib/api";
+import {
+  AnalyticsSummary,
+  fetchAnalytics,
+  logWeightCheckin,
+  ApiError,
+} from "@/lib/api";
 
 export default function AnalyticsPage() {
-  const { token } = useAuth();
+  const { token, refreshUser } = useAuth();
   const [data, setData] = useState<AnalyticsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Weekly Weight Check-in state
+  const [weightInput, setWeightInput] = useState("");
+  const [isSubmittingWeight, setIsSubmittingWeight] = useState(false);
+  const [weightSuccessMsg, setWeightSuccessMsg] = useState<string | null>(null);
+  const [weightErrorMsg, setWeightErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -43,6 +65,56 @@ export default function AnalyticsPage() {
       })
       .finally(() => setLoading(false));
   }, [token]);
+
+  const handleWeightCheckin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+
+    const parsedWeight = parseFloat(weightInput);
+    if (isNaN(parsedWeight) || parsedWeight <= 20 || parsedWeight > 500) {
+      setWeightErrorMsg("Please enter a valid weight (20 - 500 kg).");
+      return;
+    }
+
+    setIsSubmittingWeight(true);
+    setWeightErrorMsg(null);
+    setWeightSuccessMsg(null);
+
+    try {
+      const res = await logWeightCheckin(token, parsedWeight);
+      if (data) {
+        setData({
+          ...data,
+          weight_trend: res.weight_trend,
+        });
+      }
+      setWeightSuccessMsg(`Logged ${res.current_weight} kg!`);
+      setWeightInput("");
+      if (refreshUser) {
+        refreshUser().catch(() => {});
+      }
+      setTimeout(() => {
+        setWeightSuccessMsg(null);
+      }, 4000);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setWeightErrorMsg(err.message);
+      } else {
+        setWeightErrorMsg("Failed to record weight.");
+      }
+    } finally {
+      setIsSubmittingWeight(false);
+    }
+  };
+
+  // Calculate delta from last 2 entries
+  const weightTrend = data?.weight_trend || [];
+  const latestWeight = weightTrend.length > 0 ? weightTrend[weightTrend.length - 1].weight : null;
+  const prevWeight = weightTrend.length > 1 ? weightTrend[weightTrend.length - 2].weight : null;
+  const weightDelta =
+    latestWeight !== null && prevWeight !== null
+      ? Math.round((latestWeight - prevWeight) * 10) / 10
+      : null;
 
   return (
     <>
@@ -72,24 +144,99 @@ export default function AnalyticsPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              {/* Weight Trend Card */}
+              {/* Weight Trend Card with Weekly Check-in */}
               <Card>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-display font-semibold text-ink dark:text-white flex items-center gap-2">
-                    <TrendingUp size={18} className="text-secondary" /> Weight Trend
-                  </h2>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                  <div>
+                    <h2 className="text-lg font-display font-semibold text-ink dark:text-white flex items-center gap-2">
+                      <TrendingUp size={18} className="text-secondary" /> Weight Trend
+                    </h2>
+                    <p className="text-xs text-ink-muted">Weekly check-in & body weight progression</p>
+                  </div>
+                  {latestWeight !== null && (
+                    <div className="flex items-center gap-2">
+                      <div className="text-right">
+                        <span className="text-base font-bold text-ink dark:text-white">
+                          {latestWeight} <span className="text-xs font-normal text-ink-muted">kg</span>
+                        </span>
+                      </div>
+                      {weightDelta !== null && (
+                        <span
+                          className={`inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full ${
+                            weightDelta < 0
+                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              : weightDelta > 0
+                              ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                              : "bg-surface text-ink-muted"
+                          }`}
+                        >
+                          {weightDelta > 0 ? `+${weightDelta}` : `${weightDelta}`} kg
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="h-64">
+
+                {/* Weekly Check-in Input Bar */}
+                <form
+                  onSubmit={handleWeightCheckin}
+                  className="mb-4 p-3 rounded-xl bg-surface/70 dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.08] flex flex-wrap sm:flex-nowrap items-center gap-2.5"
+                >
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Scale size={16} className="text-secondary" />
+                    <span className="text-xs font-semibold text-ink dark:text-white">
+                      Weekly Check-in:
+                    </span>
+                  </div>
+                  <div className="relative flex-1 min-w-[120px] max-w-[160px]">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="20"
+                      max="500"
+                      placeholder="e.g. 72.5"
+                      value={weightInput}
+                      onChange={(e) => setWeightInput(e.target.value)}
+                      disabled={isSubmittingWeight}
+                      className="w-full text-xs font-medium rounded-lg px-2.5 py-1.5 bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 text-ink dark:text-white placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-secondary pr-7"
+                    />
+                    <span className="absolute right-2 top-1.5 text-xs text-ink-muted font-medium pointer-events-none">
+                      kg
+                    </span>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingWeight || !weightInput}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-secondary text-ink hover:opacity-90 active:scale-95 transition disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    {isSubmittingWeight ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Plus size={13} />
+                    )}
+                    Log Weight
+                  </button>
+                  {weightSuccessMsg && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                      <CheckCircle2 size={13} /> {weightSuccessMsg}
+                    </span>
+                  )}
+                  {weightErrorMsg && (
+                    <span className="text-xs text-error font-medium">{weightErrorMsg}</span>
+                  )}
+                </form>
+
+                <div className="h-56">
                   {!data?.weight_trend || data.weight_trend.length === 0 ? (
                     <div className="flex h-full flex-col items-center justify-center text-center p-4 text-ink-muted">
                       <p className="text-sm font-medium">No weight logs recorded yet.</p>
                       <p className="text-xs mt-1">
-                        Update your weight in Settings to see your progress chart!
+                        Enter your weight above to record your first weekly check-in!
                       </p>
                     </div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={data.weight_trend} margin={{ left: -20, right: 10 }}>
+                      <LineChart data={data.weight_trend} margin={{ left: -20, right: 10, top: 5, bottom: 5 }}>
                         <CartesianGrid
                           strokeDasharray="3 3"
                           vertical={false}
@@ -114,6 +261,7 @@ export default function AnalyticsPage() {
                             border: "1px solid rgba(0,0,0,0.06)",
                             fontSize: 13,
                           }}
+                          formatter={(value: any) => [`${value} kg`, "Weight"]}
                         />
                         <Line
                           type="monotone"
@@ -121,6 +269,7 @@ export default function AnalyticsPage() {
                           stroke="#D4A373"
                           strokeWidth={2.5}
                           dot={{ r: 4, fill: "#D4A373" }}
+                          activeDot={{ r: 6 }}
                         />
                       </LineChart>
                     </ResponsiveContainer>

@@ -1,0 +1,123 @@
+{
+  "model_name": "IndianFood-MobileNetV2-FineTuned",
+  "backbone": "MobileNetV2",
+  "num_classes": 15,
+  "classes": [
+    "dal",
+    "roti",
+    "rice",
+    "sabji",
+    "paneer",
+    "rajma",
+    "dosa",
+    "idli",
+    "poha",
+    "paratha",
+    "biryani",
+    "thali",
+    "sambar",
+    "chutney",
+    "curd_raita"
+  ],
+  "evaluation_metrics": {
+    "validation_accuracy": 98.89,
+    "weighted_precision": 0.9897,
+    "weighted_recall": 0.9889,
+    "weighted_f1_score": 0.9889,
+    "training_time_seconds": 135.42,
+    "epochs_trained": 5,
+    "total_dataset_samples": 630
+  },
+  "per_class_performance": {
+    "dal": {
+      "precision": 1.0,
+      "recall": 0.917,
+      "f1_score": 0.957,
+      "support": 12.0
+    },
+    "roti": {
+      "precision": 1.0,
+      "recall": 0.917,
+      "f1_score": 0.957,
+      "support": 12.0
+    },
+    "rice": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 12.0
+    },
+    "sabji": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 12.0
+    },
+    "paneer": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 12.0
+    },
+    "rajma": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 12.0
+    },
+    "dosa": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 12.0
+    },
+    "idli": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 12.0
+    },
+    "poha": {
+      "precision": 0.923,
+      "recall": 1.0,
+      "f1_score": 0.96,
+      "support": 12.0
+    },
+    "paratha": {
+      "precision": 0.923,
+      "recall": 1.0,
+      "f1_score": 0.96,
+      "support": 12.0
+    },
+    "biryani": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 12.0
+    },
+    "thali": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 12.0
+    },
+    "sambar": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 12.0
+    },
+    "chutney": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 12.0
+    },
+    "curd_raita": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 12.0
+    }
+  }
+}

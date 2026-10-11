@@ -46,6 +46,7 @@ class UserProfileUpdate(BaseModel):
     preferred_workout_type: Optional[str] = None
     available_workout_time: Optional[str] = None
     food_preferences: Optional[list[str]] = None
+    allergies: Optional[list[str]] = None
     fitness_limitations: Optional[list[str]] = None
     onboarding_completed: Optional[bool] = None
 
@@ -66,6 +67,7 @@ class UserOut(BaseModel):
     preferred_workout_type: Optional[str] = None
     available_workout_time: Optional[str] = None
     food_preferences: Optional[list[str]] = None
+    allergies: Optional[list[str]] = None
     fitness_limitations: Optional[list[str]] = None
     onboarding_completed: Optional[bool] = False
     photo_url: Optional[str] = None
@@ -150,6 +152,10 @@ class NutritionRecommendationsResponse(BaseModel):
     evidence_sources: list[EvidenceSourceOut] = []
     guidance_notes: list[str] = []
     user_metrics_summary: Optional[dict] = None
+    consumed_today: Optional[dict] = None
+    remaining_targets: Optional[dict] = None
+    remaining_suggestions: Optional[list[MealRecommendationOut]] = None
+    smart_advice: Optional[str] = None
 
 
 class MealScanResponse(BaseModel):
@@ -159,8 +165,12 @@ class MealScanResponse(BaseModel):
     protein_g: float
     carbs_g: float
     fat_g: float
+    fiber_g: Optional[float] = 0.0
     confidence: float
     breakdown: str
+    reliable_source: Optional[str] = "ICMR IFCT 2024 & USDA FoodData Central"
+    class_label: Optional[str] = None
+    portion_multiplier: Optional[float] = 1.0
 
 
 class FoodItemOut(BaseModel):
@@ -169,6 +179,7 @@ class FoodItemOut(BaseModel):
     protein_g: float
     carbs_g: float
     fat_g: float
+    fiber_g: Optional[float] = 0.0
     dietary_tags: list[str] = []
 
 
@@ -178,6 +189,8 @@ class MealLogCreate(BaseModel):
     protein_g: float
     carbs_g: float
     fat_g: float
+    fiber_g: Optional[float] = 0.0
+    portion_size: Optional[str] = None
     logged_at: datetime = Field(default_factory=datetime.utcnow)
 
 

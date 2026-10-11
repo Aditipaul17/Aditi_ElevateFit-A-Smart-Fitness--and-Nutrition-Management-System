@@ -18,5 +18,6 @@ ml/*.h5
 # General
 .DS_Store
 *.log
+*.tsbuildinfo
 .env
 .env.local

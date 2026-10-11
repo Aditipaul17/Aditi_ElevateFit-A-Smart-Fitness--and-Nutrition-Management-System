@@ -159,6 +159,7 @@ function buildPayload(form: FormState): ProfileUpdatePayload {
     preferred_workout_type: form.preferred_workout_type || null,
     available_workout_time: form.available_workout_time || null,
     food_preferences: form.food_preferences.length > 0 ? form.food_preferences : null,
+    allergies: form.food_preferences.length > 0 ? form.food_preferences : null,
     fitness_limitations: form.fitness_limitations.length > 0 ? form.fitness_limitations : null,
     onboarding_completed: true,
   };

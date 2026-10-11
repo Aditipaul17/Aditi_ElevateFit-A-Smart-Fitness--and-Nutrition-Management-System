@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.database import meals_collection, users_collection, workouts_collection, workout_logs_collection
 from app.routers.auth import get_current_user
@@ -13,6 +13,11 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 class WeightPoint(BaseModel):
     date: str
     weight: float
+
+
+class WeightCheckinPayload(BaseModel):
+    weight: float = Field(..., gt=20.0, le=500.0, description="Weight in kg")
+    date: Optional[str] = None
 
 
 class DailyCaloriePoint(BaseModel):
@@ -130,5 +135,57 @@ async def get_analytics_summary(current_user: dict = Depends(get_current_user)):
         goal_progress_pct=goal_progress,
         total_meals_logged=len(recent_meals),
         total_workouts_saved=total_saved_workouts,
+    )
+
+
+class WeightCheckinOut(BaseModel):
+    message: str
+    current_weight: float
+    weight_trend: List[WeightPoint]
+
+
+@router.post("/weight-checkin", response_model=WeightCheckinOut)
+async def log_weight_checkin(
+    payload: WeightCheckinPayload,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["_id"]
+    now = datetime.now(timezone.utc)
+    date_label = payload.date.strip() if payload.date and payload.date.strip() else now.strftime("%b %d")
+    weight_val = round(float(payload.weight), 1)
+
+    new_entry = {
+        "weight": weight_val,
+        "date": date_label,
+        "timestamp": now.isoformat(),
+    }
+
+    # Update current weight and append to history
+    await users_collection.update_one(
+        {"_id": user_id},
+        {
+            "$set": {"weight": weight_val, "updated_at": now},
+            "$push": {"weight_history": new_entry},
+        },
+    )
+
+    # Fetch updated history for the trend
+    user = await users_collection.find_one({"_id": user_id})
+    raw_history = user.get("weight_history", []) if user else []
+
+    trend_points: List[WeightPoint] = []
+    if isinstance(raw_history, list) and len(raw_history) > 0:
+        for entry in raw_history[-10:]:
+            if isinstance(entry, dict) and "weight" in entry:
+                trend_points.append(
+                    WeightPoint(date=entry.get("date", "Log"), weight=float(entry["weight"]))
+                )
+    else:
+        trend_points.append(WeightPoint(date=date_label, weight=weight_val))
+
+    return WeightCheckinOut(
+        message="Weight logged successfully",
+        current_weight=weight_val,
+        weight_trend=trend_points,
     )
 

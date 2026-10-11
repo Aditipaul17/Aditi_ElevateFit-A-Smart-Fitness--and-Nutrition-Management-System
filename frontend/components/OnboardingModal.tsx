@@ -151,6 +151,7 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModal
         equipment: equipment.length > 0 ? equipment : ["No equipment"],
         dietary_preference: dietaryPreference,
         food_preferences: foodPreferences,
+        allergies: foodPreferences,
         fitness_limitations: fitnessLimitations,
         onboarding_completed: true,
       });

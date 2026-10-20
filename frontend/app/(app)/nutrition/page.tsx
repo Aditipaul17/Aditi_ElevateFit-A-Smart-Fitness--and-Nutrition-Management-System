@@ -1,15 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Topbar } from "@/components/Topbar";
 import { Card } from "@/components/ui/Card";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
+  Minus,
   Loader2,
   Utensils,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Sparkles,
   Search,
   Leaf,
@@ -25,6 +27,9 @@ import {
   X,
   Award,
   Trash2,
+  Check,
+  Tag,
+  ArrowRight,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -32,8 +37,10 @@ import {
   fetchNutritionRecommendations,
   searchFoods,
   logMeal,
+  logMealsBatch,
   deleteMeal,
   recalculatePortion,
+  recalculateFoodItem,
   scanMealImage,
   ApiError,
   NutritionTargets,
@@ -41,6 +48,8 @@ import {
   FoodItem,
   EvidenceSource,
   MealScanResponse,
+  ScannedFoodItem,
+  FoodAlternative,
 } from "@/lib/api";
 import { GamificationToastBanner, GamificationToastItem } from "@/components/GamificationToast";
 
@@ -271,8 +280,10 @@ export default function NutritionPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [scannedResult, setScannedResult] = useState<MealScanResponse | null>(null);
   const [portionMultiplier, setPortionMultiplier] = useState(1.0);
+  const [scannedItems, setScannedItems] = useState<ScannedFoodItem[]>([]);
+  const [showAddMissingDropdown, setShowAddMissingDropdown] = useState(false);
 
-  // Editable Review Form state for scanned meal
+  // Editable Review Form state for scanned meal (fallback single-item or composite)
   const [scanName, setScanName] = useState("");
   const [scanPortion, setScanPortion] = useState("");
   const [scanCalories, setScanCalories] = useState("");
@@ -280,6 +291,7 @@ export default function NutritionPage() {
   const [scanCarbs, setScanCarbs] = useState("");
   const [scanFat, setScanFat] = useState("");
   const [scanFiber, setScanFiber] = useState("");
+  const [scanSugar, setScanSugar] = useState("");
 
   // Remaining Nutritional Needs state
   const [remainingTargets, setRemainingTargets] = useState<{
@@ -459,61 +471,207 @@ export default function NutritionPage() {
       const imagePayload = selectedFile || imagePreview!;
       const res = await scanMealImage(token, imagePayload, portionMultiplier);
       setScannedResult(res);
-      setScanName(res.food_name);
-      setScanPortion(res.portion_size);
-      setScanCalories(String(res.calories));
-      setScanProtein(String(res.protein_g));
-      setScanCarbs(String(res.carbs_g));
-      setScanFat(String(res.fat_g));
-      setScanFiber(String(res.fiber_g || 0));
+
+      if (res.detected_items && res.detected_items.length > 0) {
+        setScannedItems(res.detected_items);
+      } else {
+        setScannedItems([
+          {
+            id: "scanned_item_1",
+            name: res.food_name,
+            class_label: res.class_label || "dal",
+            portion_size: res.portion_size,
+            portion_multiplier: res.portion_multiplier || 1.0,
+            weight_g: 150,
+            calories: res.calories,
+            protein_g: res.protein_g,
+            carbs_g: res.carbs_g,
+            fat_g: res.fat_g,
+            fiber_g: res.fiber_g || 0,
+            sugar_g: res.sugar_g || 0,
+            confidence: res.confidence,
+            uncertain: false,
+            reliable_source: res.reliable_source,
+          },
+        ]);
+      }
     } catch (err) {
-      setErrorMsg("Failed to identify meal. Please check network connection or try a clearer food photo.");
+      if (err instanceof ApiError) {
+        setErrorMsg(err.message);
+      } else {
+        setErrorMsg("Failed to analyze image. Please ensure lighting is clear and food is visible, or enter items manually.");
+      }
     } finally {
       setIsScanning(false);
     }
   };
 
-  const updatePortionMultiplier = async (multiplier: number) => {
-    setPortionMultiplier(multiplier);
-    if (scannedResult && token) {
+  const handleUpdateItemMultiplier = async (itemId: string, multiplier: number) => {
+    const mult = Math.max(0.2, Math.min(5.0, Number(multiplier.toFixed(1))));
+    setScannedItems((prev) =>
+      prev.map((it) => (it.id === itemId ? { ...it, portion_multiplier: mult } : it))
+    );
+
+    const target = scannedItems.find((it) => it.id === itemId);
+    if (target && token) {
       try {
-        const recalculated = await recalculatePortion(
-          token,
-          scannedResult.class_label || scannedResult.food_name,
-          multiplier
+        const rec = await recalculateFoodItem(token, target.class_label, mult);
+        setScannedItems((prev) =>
+          prev.map((it) => {
+            if (it.id !== itemId) return it;
+            return {
+              ...it,
+              portion_size: rec.portion_size,
+              weight_g: rec.weight_g,
+              calories: rec.calories,
+              protein_g: rec.protein_g,
+              carbs_g: rec.carbs_g,
+              fat_g: rec.fat_g,
+              fiber_g: rec.fiber_g,
+              sugar_g: rec.sugar_g || 0,
+            };
+          })
         );
-        setScanCalories(String(recalculated.calories));
-        setScanProtein(String(recalculated.protein_g));
-        setScanCarbs(String(recalculated.carbs_g));
-        setScanFat(String(recalculated.fat_g));
-        setScanFiber(String(recalculated.fiber_g || 0));
-        setScanPortion(recalculated.portion_size);
         return;
       } catch {
         // Fallback proportional calculation
       }
-      setScanCalories(String(Math.round(scannedResult.calories * multiplier)));
-      setScanProtein(String((scannedResult.protein_g * multiplier).toFixed(1)));
-      setScanCarbs(String((scannedResult.carbs_g * multiplier).toFixed(1)));
-      setScanFat(String((scannedResult.fat_g * multiplier).toFixed(1)));
-      setScanFiber(String(((scannedResult.fiber_g || 3.0) * multiplier).toFixed(1)));
-      setScanPortion(`${multiplier}x portion`);
+    }
+
+    setScannedItems((prev) =>
+      prev.map((it) => {
+        if (it.id !== itemId) return it;
+        const ratio = mult / (it.portion_multiplier || 1.0);
+        return {
+          ...it,
+          calories: Math.round(it.calories * ratio),
+          protein_g: Number((it.protein_g * ratio).toFixed(1)),
+          carbs_g: Number((it.carbs_g * ratio).toFixed(1)),
+          fat_g: Number((it.fat_g * ratio).toFixed(1)),
+          fiber_g: Number(((it.fiber_g || 0) * ratio).toFixed(1)),
+          sugar_g: Number(((it.sugar_g || 0) * ratio).toFixed(1)),
+          portion_size: `${mult}x portion`,
+        };
+      })
+    );
+  };
+
+  const handleSwitchItemAlternative = async (itemId: string, altName: string, altClassLabel?: string) => {
+    const cls = altClassLabel || altName.toLowerCase().replace(/\s+/g, "_");
+    const target = scannedItems.find((it) => it.id === itemId);
+    const mult = target?.portion_multiplier || 1.0;
+
+    if (token) {
+      try {
+        const rec = await recalculateFoodItem(token, cls, mult);
+        setScannedItems((prev) =>
+          prev.map((it) => {
+            if (it.id !== itemId) return it;
+            return {
+              ...it,
+              name: altName,
+              class_label: cls,
+              portion_size: rec.portion_size,
+              weight_g: rec.weight_g,
+              calories: rec.calories,
+              protein_g: rec.protein_g,
+              carbs_g: rec.carbs_g,
+              fat_g: rec.fat_g,
+              fiber_g: rec.fiber_g,
+              sugar_g: rec.sugar_g || 0,
+              uncertain: false,
+              uncertainty_note: null,
+            };
+          })
+        );
+        return;
+      } catch {
+        // Just rename
+      }
+    }
+    setScannedItems((prev) =>
+      prev.map((it) => (it.id === itemId ? { ...it, name: altName, uncertain: false, uncertainty_note: null } : it))
+    );
+  };
+
+  const handleRemoveItem = (itemId: string) => {
+    setScannedItems((prev) => prev.filter((it) => it.id !== itemId));
+  };
+
+  const handleAddQuickFood = async (classLabel: string, displayName?: string) => {
+    if (!token) return;
+    try {
+      const rec = await recalculateFoodItem(token, classLabel, 1.0);
+      const newItem: ScannedFoodItem = {
+        id: `scanned_item_${Date.now()}`,
+        name: displayName || rec.food_name,
+        class_label: classLabel,
+        portion_size: rec.portion_size,
+        portion_multiplier: 1.0,
+        weight_g: rec.weight_g,
+        calories: rec.calories,
+        protein_g: rec.protein_g,
+        carbs_g: rec.carbs_g,
+        fat_g: rec.fat_g,
+        fiber_g: rec.fiber_g,
+        sugar_g: rec.sugar_g || 0,
+        confidence: 1.0,
+        uncertain: false,
+        reliable_source: "ICMR IFCT 2024 & USDA FoodData Central",
+      };
+      setScannedItems((prev) => [...prev, newItem]);
+      setShowAddMissingDropdown(false);
+    } catch {
+      setErrorMsg("Could not retrieve nutrition for selected item.");
     }
   };
 
+  const handleUpdateItemField = (itemId: string, field: keyof ScannedFoodItem, val: any) => {
+    setScannedItems((prev) =>
+      prev.map((it) => {
+        if (it.id !== itemId) return it;
+        return { ...it, [field]: val };
+      })
+    );
+  };
+
+  const mealTotals = useMemo(() => {
+    return scannedItems.reduce(
+      (acc, it) => ({
+        calories: acc.calories + (Number(it.calories) || 0),
+        protein_g: Number((acc.protein_g + (Number(it.protein_g) || 0)).toFixed(1)),
+        carbs_g: Number((acc.carbs_g + (Number(it.carbs_g) || 0)).toFixed(1)),
+        fat_g: Number((acc.fat_g + (Number(it.fat_g) || 0)).toFixed(1)),
+        fiber_g: Number((acc.fiber_g + (Number(it.fiber_g) || 0)).toFixed(1)),
+        sugar_g: Number((acc.sugar_g + (Number(it.sugar_g) || 0)).toFixed(1)),
+      }),
+      { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0, sugar_g: 0 }
+    );
+  }, [scannedItems]);
+
   const handleSaveScannedMeal = async () => {
-    if (!token || !scanName.trim() || !scanCalories) return;
+    if (!token || scannedItems.length === 0 || submitting) return;
     setSubmitting(true);
     setErrorMsg(null);
     try {
-      const res = await logMeal(token, {
-        name: scanName.trim(),
-        calories: parseInt(scanCalories, 10) || 0,
-        protein_g: parseFloat(scanProtein) || 0,
-        carbs_g: parseFloat(scanCarbs) || 0,
-        fat_g: parseFloat(scanFat) || 0,
-        fiber_g: parseFloat(scanFiber) || 0,
-        portion_size: scanPortion || undefined,
+      const itemsToLog = scannedItems.map((it) => ({
+        name: it.name.trim(),
+        calories: parseInt(String(it.calories), 10) || 0,
+        protein_g: parseFloat(String(it.protein_g)) || 0,
+        carbs_g: parseFloat(String(it.carbs_g)) || 0,
+        fat_g: parseFloat(String(it.fat_g)) || 0,
+        fiber_g: parseFloat(String(it.fiber_g || 0)) || 0,
+        sugar_g: parseFloat(String(it.sugar_g || 0)) || 0,
+        portion_size: it.portion_size || undefined,
+        class_label: it.class_label,
+        source: "image_scan",
+        scan_id: scannedResult?.scan_id,
+      }));
+
+      const res = await logMealsBatch(token, {
+        items: itemsToLog,
+        meal_name: scannedResult?.food_name || "Scanned Meal",
+        scan_id: scannedResult?.scan_id,
       });
 
       if (res.gamification) {
@@ -523,7 +681,7 @@ export default function NutritionPage() {
             id: Math.random().toString(),
             type: "xp",
             title: `+${res.gamification.xp_gained} XP 🎉`,
-            description: "Meal scanned & logged to diary!",
+            description: `${itemsToLog.length} scanned item(s) logged to diary!`,
           });
         }
         if (res.gamification.leveled_up) {
@@ -537,14 +695,15 @@ export default function NutritionPage() {
         setGamiToasts((prev) => [...prev, ...newToasts]);
       }
 
-      setSuccessMsg("Scanned meal verified and logged successfully!");
+      setSuccessMsg(`Meal verified and logged successfully! (${itemsToLog.length} item(s) tracked)`);
       setShowScanModal(false);
       setImagePreview(null);
       setSelectedFile(null);
       setScannedResult(null);
+      setScannedItems([]);
       loadMealsAndTargets();
 
-      setTimeout(() => setSuccessMsg(null), 3000);
+      setTimeout(() => setSuccessMsg(null), 3500);
     } catch (err) {
       if (err instanceof ApiError) {
         setErrorMsg(err.message);
@@ -1473,183 +1632,366 @@ export default function NutritionPage() {
                 )}
               </div>
             ) : (
-              /* Review and Correct Detected Information Screen (Requirement) */
-              <div className="space-y-4">
-                {/* Image & Confidence Banner */}
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10">
+              /* Multi-Food Review and Verification Screen (Requirements A, B, C, D) */
+              <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+                {/* Image & Model Summary Banner */}
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10">
                   {imagePreview && (
                     <img
                       src={imagePreview}
                       alt="Scanned Food"
-                      className="w-16 h-16 rounded-lg object-cover border border-primary/30"
+                      className="w-16 h-16 rounded-xl object-cover border border-primary/30 shrink-0 shadow-sm"
                     />
                   )}
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-primary flex items-center gap-1">
-                        <Sparkles size={12} /> MobileNetV2 ML Recognition
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-primary flex items-center gap-1.5 truncate">
+                        <Sparkles size={13} />
+                        {scannedResult.model_provider === "gemini-vision"
+                          ? "Gemini AI Vision Recognition"
+                          : "Computer Vision Recognition"}
                       </span>
-                      <span className="text-[10px] font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                        {Math.round(scannedResult.confidence * 100)}% Confidence
+                      <span className="text-[10px] font-bold bg-primary/10 text-primary px-2.5 py-0.5 rounded-full shrink-0">
+                        {Math.round(scannedResult.confidence * 100)}% Overall
                       </span>
                     </div>
-                    <p className="text-xs text-ink-muted mt-1 leading-snug">{scannedResult.breakdown}</p>
+                    <p className="text-xs text-ink-muted mt-1 leading-snug line-clamp-2">{scannedResult.breakdown}</p>
                     {scannedResult.reliable_source && (
-                      <span className="inline-block text-[10px] text-emerald-600 dark:text-emerald-400 font-medium mt-1">
+                      <span className="inline-block text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
                         ✓ {scannedResult.reliable_source}
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Important Disclaimer Notice */}
-                <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                {/* Important Portion Disclaimer Notice */}
+                <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5 leading-relaxed">
                   <Info size={16} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <span>
-                    <strong>Portion &amp; Macro Verification:</strong> Estimates are cross-validated against ICMR IFCT and USDA nutrition composition data. Adjust portion size or edit values below if needed.
-                  </span>
-                </div>
-
-                {/* Quick Portion Multipliers */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-semibold text-ink dark:text-white">
-                      Portion Size Multiplier
-                    </label>
-                    <span className="text-xs font-bold text-primary">{portionMultiplier}x serving</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-2">
-                    {[0.5, 1.0, 1.5, 2.0].map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => updatePortionMultiplier(m)}
-                        className={`py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
-                          portionMultiplier === m
-                            ? "bg-primary text-white border-primary"
-                            : "border-black/10 dark:border-white/10 text-ink dark:text-white hover:border-primary"
-                        }`}
-                      >
-                        {m}x Portion
-                      </button>
-                    ))}
+                  <div>
+                    <strong>Portion Estimates:</strong> AI estimates portions by image regions. Weights are estimates—please review, adjust multipliers, or choose alternatives before saving.
                   </div>
                 </div>
 
-                {/* Editable Detected Meal Form */}
-                <div className="space-y-3 pt-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-ink dark:text-white mb-1">
-                      Detected Food Item Name
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={scanName}
-                      onChange={(e) => setScanName(e.target.value)}
-                      className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary font-medium"
-                    />
+                {/* Combined Meal Nutrition Totals Card (Requirement B & D) */}
+                <div className="rounded-2xl p-4 bg-gradient-to-br from-primary/10 via-emerald-500/5 to-teal-500/10 border border-primary/20 shadow-sm">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-primary">
+                      Combined Meal Totals
+                    </span>
+                    <span className="text-xs font-semibold text-ink-muted">
+                      {scannedItems.length} {scannedItems.length === 1 ? "Food Item" : "Food Items"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
+                    <div className="p-2 rounded-xl bg-white/70 dark:bg-card-dark/70 border border-black/5 dark:border-white/5">
+                      <div className="text-[10px] text-ink-muted font-medium">Calories</div>
+                      <div className="text-base font-black text-primary">{Math.round(mealTotals.calories)}</div>
+                      <div className="text-[9px] text-ink-muted">kcal</div>
+                    </div>
+                    <div className="p-2 rounded-xl bg-white/70 dark:bg-card-dark/70 border border-black/5 dark:border-white/5">
+                      <div className="text-[10px] text-ink-muted font-medium">Protein</div>
+                      <div className="text-sm font-bold text-ink dark:text-white">{Math.round(mealTotals.protein_g * 10) / 10}</div>
+                      <div className="text-[9px] text-ink-muted">g</div>
+                    </div>
+                    <div className="p-2 rounded-xl bg-white/70 dark:bg-card-dark/70 border border-black/5 dark:border-white/5">
+                      <div className="text-[10px] text-ink-muted font-medium">Carbs</div>
+                      <div className="text-sm font-bold text-ink dark:text-white">{Math.round(mealTotals.carbs_g * 10) / 10}</div>
+                      <div className="text-[9px] text-ink-muted">g</div>
+                    </div>
+                    <div className="p-2 rounded-xl bg-white/70 dark:bg-card-dark/70 border border-black/5 dark:border-white/5">
+                      <div className="text-[10px] text-ink-muted font-medium">Fats</div>
+                      <div className="text-sm font-bold text-ink dark:text-white">{Math.round(mealTotals.fat_g * 10) / 10}</div>
+                      <div className="text-[9px] text-ink-muted">g</div>
+                    </div>
+                    <div className="p-2 rounded-xl bg-white/70 dark:bg-card-dark/70 border border-black/5 dark:border-white/5">
+                      <div className="text-[10px] text-ink-muted font-medium">Fiber</div>
+                      <div className="text-sm font-bold text-ink dark:text-white">{Math.round(mealTotals.fiber_g * 10) / 10}</div>
+                      <div className="text-[9px] text-ink-muted">g</div>
+                    </div>
+                    <div className="p-2 rounded-xl bg-white/70 dark:bg-card-dark/70 border border-black/5 dark:border-white/5">
+                      <div className="text-[10px] text-ink-muted font-medium">Sugar</div>
+                      <div className="text-sm font-bold text-ink dark:text-white">{Math.round(mealTotals.sugar_g * 10) / 10}</div>
+                      <div className="text-[9px] text-ink-muted">g</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Detected Items List */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-ink dark:text-white uppercase tracking-wider">
+                      Detected Individual Foods ({scannedItems.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddMissingDropdown(!showAddMissingDropdown)}
+                      className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
+                    >
+                      <Plus size={14} /> Add Missing Item
+                    </button>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-ink dark:text-white mb-1">
-                      Serving &amp; Portion Size
-                    </label>
-                    <input
-                      type="text"
-                      value={scanPortion}
-                      onChange={(e) => setScanPortion(e.target.value)}
-                      className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
-                    />
-                  </div>
+                  {/* Add Missing Food Quick-Drawer */}
+                  {showAddMissingDropdown && (
+                    <div className="p-3 rounded-2xl bg-primary/5 border border-primary/20 space-y-2">
+                      <div className="text-xs font-semibold text-ink dark:text-white">
+                        Quick Add Common Meal Elements:
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { label: "roti", name: "Roti (Chapati)" },
+                          { label: "dal", name: "Dal Tadka" },
+                          { label: "rice", name: "Steamed Rice" },
+                          { label: "paneer", name: "Paneer Sabzi" },
+                          { label: "curd", name: "Curd (Dahi)" },
+                          { label: "salad", name: "Green Salad" },
+                          { label: "poha", name: "Poha" },
+                          { label: "idli", name: "Idli" },
+                        ].map((opt) => (
+                          <button
+                            key={opt.label}
+                            type="button"
+                            onClick={() => handleAddQuickFood(opt.label, opt.name)}
+                            className="px-2.5 py-1 text-xs font-medium rounded-lg bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 hover:border-primary text-ink dark:text-white hover:text-primary transition-colors flex items-center gap-1 shadow-sm"
+                          >
+                            <Plus size={11} /> {opt.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-ink dark:text-white mb-1">
-                        Calories (kcal)
-                      </label>
-                      <input
-                        type="number"
-                        required
-                        value={scanCalories}
-                        onChange={(e) => setScanCalories(e.target.value)}
-                        className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary font-bold text-primary"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-ink dark:text-white mb-1">
-                        Protein (g)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={scanProtein}
-                        onChange={(e) => setScanProtein(e.target.value)}
-                        className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-3 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary font-semibold"
-                      />
-                    </div>
-                  </div>
+                  {scannedItems.map((item, idx) => (
+                    <div
+                      key={item.id || idx}
+                      className="p-3.5 rounded-2xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 shadow-sm space-y-3"
+                    >
+                      {/* Item Header: Title, Confidence / Uncertainty, Remove */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <span className="text-sm font-bold text-ink dark:text-white">
+                              {item.name}
+                            </span>
+                            {item.uncertain ? (
+                              <span className="text-[10px] font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <AlertTriangle size={10} /> Uncertain ({Math.round(item.confidence * 100)}%)
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <Check size={10} /> Confirmed ({Math.round(item.confidence * 100)}%)
+                              </span>
+                            )}
+                          </div>
+                          {item.uncertain && (
+                            <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">
+                              Visual similarity detected. Check alternatives below if this was misidentified.
+                            </p>
+                          )}
+                        </div>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <label className="block text-xs font-semibold text-ink dark:text-white mb-1">
-                        Carbs (g)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={scanCarbs}
-                        onChange={(e) => setScanCarbs(e.target.value)}
-                        className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-2.5 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
-                      />
+                        {scannedItems.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItem(item.id)}
+                            className="p-1.5 text-ink-muted hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+                            title="Remove food item"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Visually Similar Alternatives (Requirement A.4 & C) */}
+                      {item.alternatives && item.alternatives.length > 0 && (
+                        <div className="pt-1">
+                          <span className="text-[11px] font-semibold text-ink-muted block mb-1">
+                            Similar alternatives (click to switch):
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {item.alternatives.map((alt, aIdx) => (
+                              <button
+                                key={aIdx}
+                                type="button"
+                                onClick={() => handleSwitchItemAlternative(item.id, alt.name, alt.class_label)}
+                                className="px-2 py-0.5 text-[11px] font-medium rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 hover:border-primary text-ink dark:text-white hover:text-primary transition-colors flex items-center gap-1"
+                              >
+                                <span>{alt.name}</span>
+                                {alt.calories !== undefined && (
+                                  <span className="text-[9px] text-ink-muted">({Math.round(alt.calories)} kcal)</span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Portion Multiplier Quick Buttons */}
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-black/5 dark:border-white/5">
+                        <span className="text-xs font-semibold text-ink-muted">
+                          Portion: <span className="text-ink dark:text-white font-bold">{item.portion_multiplier || 1.0}x</span>
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {[0.5, 1.0, 1.5, 2.0].map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => handleUpdateItemMultiplier(item.id, m)}
+                              className={`px-2 py-1 text-[11px] font-semibold rounded-lg border transition-colors ${
+                                (item.portion_multiplier || 1.0) === m
+                                  ? "bg-primary text-white border-primary"
+                                  : "border-black/10 dark:border-white/10 text-ink dark:text-white hover:border-primary"
+                              }`}
+                            >
+                              {m}x
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Editable Fields: Food Name & Serving Size */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-ink-muted mb-0.5">
+                            Food Name
+                          </label>
+                          <input
+                            type="text"
+                            value={item.name}
+                            onChange={(e) => handleUpdateItemField(item.id, "name", e.target.value)}
+                            className="w-full rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-2.5 py-1.5 text-xs text-ink dark:text-white outline-none focus:border-primary font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-ink-muted mb-0.5">
+                            Estimated Serving / Weight
+                          </label>
+                          <input
+                            type="text"
+                            value={item.portion_size}
+                            onChange={(e) => handleUpdateItemField(item.id, "portion_size", e.target.value)}
+                            className="w-full rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-2.5 py-1.5 text-xs text-ink dark:text-white outline-none focus:border-primary"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Editable Nutrition Values (Calories, P, C, F, Fiber, Sugar) */}
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-semibold text-ink-muted mb-0.5">
+                            Calories
+                          </label>
+                          <input
+                            type="number"
+                            value={item.calories}
+                            onChange={(e) => handleUpdateItemField(item.id, "calories", parseFloat(e.target.value) || 0)}
+                            className="w-full rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-2 py-1 text-xs text-primary font-bold outline-none focus:border-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-ink-muted mb-0.5">
+                            Protein (g)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={item.protein_g}
+                            onChange={(e) => handleUpdateItemField(item.id, "protein_g", parseFloat(e.target.value) || 0)}
+                            className="w-full rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-2 py-1 text-xs text-ink dark:text-white font-medium outline-none focus:border-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-ink-muted mb-0.5">
+                            Carbs (g)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={item.carbs_g}
+                            onChange={(e) => handleUpdateItemField(item.id, "carbs_g", parseFloat(e.target.value) || 0)}
+                            className="w-full rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-2 py-1 text-xs text-ink dark:text-white font-medium outline-none focus:border-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-ink-muted mb-0.5">
+                            Fat (g)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={item.fat_g}
+                            onChange={(e) => handleUpdateItemField(item.id, "fat_g", parseFloat(e.target.value) || 0)}
+                            className="w-full rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-2 py-1 text-xs text-ink dark:text-white font-medium outline-none focus:border-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-ink-muted mb-0.5">
+                            Fiber (g)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={item.fiber_g || 0}
+                            onChange={(e) => handleUpdateItemField(item.id, "fiber_g", parseFloat(e.target.value) || 0)}
+                            className="w-full rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-2 py-1 text-xs text-ink dark:text-white font-medium outline-none focus:border-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-ink-muted mb-0.5">
+                            Sugar (g)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={item.sugar_g || 0}
+                            onChange={(e) => handleUpdateItemField(item.id, "sugar_g", parseFloat(e.target.value) || 0)}
+                            className="w-full rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-2 py-1 text-xs text-ink dark:text-white font-medium outline-none focus:border-primary"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-ink dark:text-white mb-1">
-                        Fats (g)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={scanFat}
-                        onChange={(e) => setScanFat(e.target.value)}
-                        className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-2.5 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-ink dark:text-white mb-1">
-                        Fiber (g)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={scanFiber}
-                        onChange={(e) => setScanFiber(e.target.value)}
-                        className="w-full rounded-xl bg-white dark:bg-card-dark border border-black/10 dark:border-white/10 px-2.5 py-2 text-sm text-ink dark:text-white outline-none focus:border-primary"
-                      />
-                    </div>
-                  </div>
+                  ))}
                 </div>
 
                 {/* Final Action Buttons */}
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-black/10 dark:border-white/10">
+                <div className="flex items-center justify-between gap-3 pt-4 border-t border-black/10 dark:border-white/10 sticky bottom-0 bg-white/95 dark:bg-card-dark/95 backdrop-blur-sm p-2 rounded-xl">
                   <button
                     type="button"
                     onClick={() => {
                       setScannedResult(null);
+                      setScannedItems([]);
                     }}
-                    className="rounded-xl border border-black/10 dark:border-white/10 px-4 py-2 text-sm text-ink-muted hover:text-ink transition-colors"
+                    className="rounded-xl border border-black/10 dark:border-white/10 px-4 py-2 text-xs font-semibold text-ink-muted hover:text-ink transition-colors"
                   >
                     Rescan
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveScannedMeal}
-                    disabled={submitting}
-                    className="rounded-xl bg-primary text-white px-5 py-2.5 text-sm font-bold hover:bg-secondary transition-colors disabled:opacity-60 flex items-center gap-2 shadow-md"
-                  >
-                    {submitting && <Loader2 size={16} className="animate-spin" />}
-                    {submitting ? "Saving..." : "Confirm & Log to Diary"}
-                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowScanModal(false);
+                        setScannedResult(null);
+                        setScannedItems([]);
+                        setImagePreview(null);
+                      }}
+                      className="rounded-xl border border-black/10 dark:border-white/10 px-3.5 py-2 text-xs font-semibold text-ink-muted hover:text-ink transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveScannedMeal}
+                      disabled={submitting || scannedItems.length === 0}
+                      className="rounded-xl bg-primary text-white px-5 py-2.5 text-xs font-bold hover:bg-secondary transition-colors disabled:opacity-60 flex items-center gap-2 shadow-md"
+                    >
+                      {submitting && <Loader2 size={15} className="animate-spin" />}
+                      {submitting ? "Saving Meal..." : `Confirm & Log ${scannedItems.length} Item${scannedItems.length !== 1 ? 's' : ''} (${Math.round(mealTotals.calories)} kcal)`}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

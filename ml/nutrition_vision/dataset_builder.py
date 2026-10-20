@@ -8,7 +8,10 @@ from typing import Dict, List, Optional
 import os
 import math
 import random
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None
 from PIL import Image, ImageDraw, ImageFilter
 
 
@@ -34,6 +37,25 @@ CLASS_TO_IDX: Dict[str, int] = {cls_name: idx for idx, cls_name in enumerate(IND
 IDX_TO_CLASS: Dict[int, str] = {idx: cls_name for idx, cls_name in enumerate(INDIAN_FOOD_CLASSES)}
 
 
+FOOD_ALTERNATIVES_MAP: Dict[str, List[str]] = {
+    "paneer": ["Tofu Curry", "Egg Bhurji", "Soya Chaap Masala"],
+    "dal": ["Sambar", "Kadhi Pakora", "Moong Soup"],
+    "idli": ["Steamed Rice", "Curd / Dahi", "Khaman Dhokla"],
+    "dosa": ["Uttapam", "Besan Chilla", "Plain Paratha"],
+    "poha": ["Rava Upma", "Lemon Rice", "Dalia Khichdi"],
+    "sabji": ["Bhindi Masala", "Aloo Gobi", "Palak Paneer"],
+    "roti": ["Tawa Paratha", "Butter Naan", "Methi Thepla"],
+    "rice": ["Basmati Rice", "Jeera Rice", "Vegetable Pulao"],
+    "rajma": ["Chole Masala", "Black Dal Makhani", "Lobia Curry"],
+    "curd_raita": ["Plain Whole Milk Dahi", "Greek Yogurt", "Spiced Chaas"],
+    "sambar": ["Yellow Dal Tadka", "Tomato Rasam", "Kadhi"],
+    "paratha": ["Phulka Roti", "Paneer Paratha", "Aloo Paratha"],
+    "biryani": ["Vegetable Pulao", "Jeera Rice", "Khichdi"],
+    "thali": ["North Indian Thali", "South Indian Meals", "Mini Thali"],
+    "chutney": ["Mint Coriander Chutney", "Tomato Chutney", "Peanut Chutney"],
+}
+
+
 @dataclass
 class FoodNutrientProfile:
     name: str
@@ -46,6 +68,7 @@ class FoodNutrientProfile:
     standard_portion_size: str
     standard_weight_g: float
     description: str
+    sugar_g_per_100g: float = 0.0
 
 
 # ICMR IFCT 2024 & USDA FoodData Central validated nutrient values
@@ -249,6 +272,8 @@ def calculate_food_nutrition(class_label: str, portion_multiplier: float = 1.0) 
     fiber_g = round(profile.fiber_g_per_100g * factor, 1)
 
     portion_text = f"{profile.standard_portion_size}" if portion_multiplier == 1.0 else f"{portion_multiplier:.1f}x {profile.standard_portion_size}"
+    sugar_g = round(getattr(profile, "sugar_g_per_100g", 1.2) * factor, 1)
+    alternatives = FOOD_ALTERNATIVES_MAP.get(class_label, [])
 
     return {
         "food_name": profile.name,
@@ -260,5 +285,8 @@ def calculate_food_nutrition(class_label: str, portion_multiplier: float = 1.0) 
         "carbs_g": carbs_g,
         "fat_g": fat_g,
         "fiber_g": fiber_g,
+        "sugar_g": sugar_g,
         "description": profile.description,
+        "alternatives": alternatives,
+        "reliable_source": "ICMR IFCT 2024 & USDA FoodData Central",
     }

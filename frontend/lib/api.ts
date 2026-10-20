@@ -320,8 +320,35 @@ export type MealLogPayload = {
   carbs_g: number;
   fat_g: number;
   fiber_g?: number;
+  sugar_g?: number;
   portion_size?: string;
+  class_label?: string;
+  scan_id?: string;
+  source?: string;
 };
+
+export async function logMealsBatch(
+  token: string,
+  payload: {
+    items: MealLogPayload[];
+    meal_name?: string;
+    scan_id?: string;
+  }
+): Promise<{ success: boolean; logged_count: number; ids: string[]; gamification?: ActivityRewardResponse }> {
+  const res = await safeFetch(`${API_BASE_URL}/nutrition/meals/batch`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not log meal items."), res.status);
+  }
+  return body as { success: boolean; logged_count: number; ids: string[]; gamification?: ActivityRewardResponse };
+}
 
 export async function logMeal(token: string, payload: MealLogPayload): Promise<{ id: string; gamification?: ActivityRewardResponse }> {
   const res = await safeFetch(`${API_BASE_URL}/nutrition/meals`, {
@@ -413,6 +440,35 @@ export type FoodItem = {
   dietary_tags: string[];
 };
 
+export type FoodAlternative = {
+  name: string;
+  class_label?: string;
+  calories?: number;
+  protein_g?: number;
+  carbs_g?: number;
+  fat_g?: number;
+};
+
+export type ScannedFoodItem = {
+  id: string;
+  name: string;
+  class_label: string;
+  portion_size: string;
+  portion_multiplier: number;
+  weight_g: number;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fiber_g?: number;
+  sugar_g?: number;
+  confidence: number;
+  uncertain?: boolean;
+  uncertainty_note?: string | null;
+  alternatives?: FoodAlternative[];
+  reliable_source?: string;
+};
+
 export type MealScanResponse = {
   food_name: string;
   portion_size: string;
@@ -421,12 +477,65 @@ export type MealScanResponse = {
   carbs_g: number;
   fat_g: number;
   fiber_g?: number;
+  sugar_g?: number;
   confidence: number;
   breakdown: string;
   reliable_source?: string;
   class_label?: string;
   portion_multiplier?: number;
+  detected_items?: ScannedFoodItem[];
+  vision_provider?: string;
+  model_provider?: string;
+  is_food?: boolean;
+  scan_id?: string;
 };
+
+export async function recalculateFoodItem(
+  token: string,
+  classLabel: string,
+  portionMultiplier: number
+): Promise<{
+  food_name: string;
+  class_label: string;
+  portion_size: string;
+  weight_g: number;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fiber_g: number;
+  sugar_g?: number;
+  reliable_source?: string;
+}> {
+  const res = await safeFetch(`${API_BASE_URL}/nutrition/recalculate-food-item`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      class_label: classLabel,
+      portion_multiplier: portionMultiplier,
+    }),
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not recalculate food item nutrition."), res.status);
+  }
+  return body as {
+    food_name: string;
+    class_label: string;
+    portion_size: string;
+    weight_g: number;
+    calories: number;
+    protein_g: number;
+    carbs_g: number;
+    fat_g: number;
+    fiber_g: number;
+    sugar_g?: number;
+    reliable_source?: string;
+  };
+}
 
 export async function recalculatePortion(
   token: string,

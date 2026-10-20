@@ -158,6 +158,35 @@ class NutritionRecommendationsResponse(BaseModel):
     smart_advice: Optional[str] = None
 
 
+class FoodAlternativeOut(BaseModel):
+    name: str
+    class_label: Optional[str] = None
+    calories: Optional[int] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+
+
+class ScannedFoodItem(BaseModel):
+    id: str
+    name: str
+    class_label: str
+    portion_size: str
+    portion_multiplier: float = 1.0
+    weight_g: float = 100.0
+    calories: int
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    fiber_g: Optional[float] = 0.0
+    sugar_g: Optional[float] = 0.0
+    confidence: float = 0.90
+    uncertain: bool = False
+    uncertainty_note: Optional[str] = None
+    alternatives: List[FoodAlternativeOut] = []
+    reliable_source: Optional[str] = "ICMR IFCT 2024 & USDA FoodData Central"
+
+
 class MealScanResponse(BaseModel):
     food_name: str
     portion_size: str
@@ -166,11 +195,16 @@ class MealScanResponse(BaseModel):
     carbs_g: float
     fat_g: float
     fiber_g: Optional[float] = 0.0
+    sugar_g: Optional[float] = 0.0
     confidence: float
     breakdown: str
     reliable_source: Optional[str] = "ICMR IFCT 2024 & USDA FoodData Central"
     class_label: Optional[str] = None
     portion_multiplier: Optional[float] = 1.0
+    detected_items: List[ScannedFoodItem] = []
+    vision_provider: Optional[str] = "local_vision_engine"
+    is_food: bool = True
+    scan_id: Optional[str] = None
 
 
 class FoodItemOut(BaseModel):
@@ -180,6 +214,7 @@ class FoodItemOut(BaseModel):
     carbs_g: float
     fat_g: float
     fiber_g: Optional[float] = 0.0
+    sugar_g: Optional[float] = 0.0
     dietary_tags: list[str] = []
 
 
@@ -190,8 +225,18 @@ class MealLogCreate(BaseModel):
     carbs_g: float
     fat_g: float
     fiber_g: Optional[float] = 0.0
+    sugar_g: Optional[float] = 0.0
     portion_size: Optional[str] = None
+    class_label: Optional[str] = None
+    scan_id: Optional[str] = None
+    source: Optional[str] = "manual"
     logged_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MealBatchLogCreate(BaseModel):
+    items: List[MealLogCreate]
+    meal_name: Optional[str] = None
+    scan_id: Optional[str] = None
 
 
 class CoachMessageCreate(BaseModel):

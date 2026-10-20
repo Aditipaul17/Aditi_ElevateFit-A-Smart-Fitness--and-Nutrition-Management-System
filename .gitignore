@@ -21,3 +21,29 @@ ml/*.h5
 *.tsbuildinfo
 .env
 .env.local
+
+# Python virtual environments
+venv/
+.venv/
+backend/venv/
+**/venv/
+**/.venv/
+
+# Python generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Generated TypeScript build info
+*.tsbuildinfo
+
+*.tsbuildinfo

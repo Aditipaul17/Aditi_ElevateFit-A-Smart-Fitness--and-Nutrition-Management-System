@@ -1,18 +1,28 @@
 import base64
+import sys
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from bson import ObjectId
 from fastapi import APIRouter, Depends, Query, File, UploadFile, HTTPException, Request
 from pydantic import BaseModel, Field
 
+# Ensure project root is in sys.path
+_project_root = Path(__file__).resolve().parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
 from app.database import meals_collection
 from app.models.schemas import (
     MealLogCreate,
+    MealBatchLogCreate,
     NutritionTargetsOut,
     MealRecommendationOut,
     EvidenceSourceOut,
     NutritionRecommendationsResponse,
     MealScanResponse,
+    ScannedFoodItem,
     FoodItemOut,
 )
 from app.routers.auth import get_current_user
@@ -20,12 +30,13 @@ from app.services.gemini import analyze_meal_image_with_ai
 
 # Import reliable nutrition database
 try:
-    from ml.nutrition_vision.dataset_builder import INDIAN_NUTRITION_DB, calculate_food_nutrition
+    from ml.nutrition_vision.dataset_builder import INDIAN_NUTRITION_DB, calculate_food_nutrition, FOOD_ALTERNATIVES_MAP
     from ml.nutrition_vision.macro_estimator import estimate_macros
 except ImportError:
     INDIAN_NUTRITION_DB = {}
     calculate_food_nutrition = None
     estimate_macros = None
+    FOOD_ALTERNATIVES_MAP = {}
 
 router = APIRouter(prefix="/nutrition", tags=["nutrition"])
 
@@ -804,6 +815,11 @@ async def get_nutrition_recommendations(current_user: dict = Depends(get_current
     )
 
 
+class RecalculateFoodItemPayload(BaseModel):
+    class_label: str
+    portion_multiplier: float = 1.0
+
+
 @router.post("/scan-meal", response_model=MealScanResponse)
 async def scan_meal_image(
     request: Request,
@@ -858,8 +874,59 @@ async def scan_meal_image(
     if not image_bytes:
         raise HTTPException(status_code=400, detail="No image file or base64 data provided")
 
+    # Image format and file size limits (Requirement C)
+    if len(image_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image size exceeds 10MB limit. Please upload a smaller image.")
+    if len(image_bytes) < 80:
+        raise HTTPException(status_code=400, detail="Image file is too small or corrupt.")
+
+    mult = max(0.1, min(10.0, float(mult or 1.0)))
     res = await analyze_meal_image_with_ai(image_bytes, mime_type, portion_multiplier=mult)
+
+    if not res.get("is_food", True):
+        raise HTTPException(
+            status_code=422,
+            detail=res.get("error", "No recognizable food items found in this image. Please provide a clear view of your meal or enter items manually.")
+        )
+
+    # Attach unique scan ID to prevent duplicate accidental logs
+    res["scan_id"] = f"scan_{uuid.uuid4().hex[:12]}"
     return MealScanResponse(**res)
+
+
+@router.post("/recalculate-food-item")
+async def recalculate_food_item(
+    payload: RecalculateFoodItemPayload,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Recalculates verified nutrition values for a specific food item
+    grounded in the verified ICMR IFCT / USDA database with the specified portion multiplier.
+    """
+    label = (payload.class_label or "dal").strip().lower()
+    mult = max(0.1, min(10.0, float(payload.portion_multiplier or 1.0)))
+
+    if calculate_food_nutrition:
+        return calculate_food_nutrition(label, portion_multiplier=mult)
+
+    try:
+        from ml.nutrition_vision.macro_estimator import estimate_macros
+        est = estimate_macros(label, portion_multiplier=mult)
+        return {
+            "food_name": est.food_name,
+            "class_label": est.class_label,
+            "portion_size": est.portion_size,
+            "weight_g": 100.0 * mult,
+            "calories": est.calories,
+            "protein_g": est.protein_g,
+            "carbs_g": est.carbs_g,
+            "fat_g": est.fat_g,
+            "fiber_g": est.fiber_g,
+            "sugar_g": 1.0 * mult,
+            "reliable_source": est.reliable_source,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Portion recalculation failed: {str(exc)}")
 
 
 @router.post("/recalculate-portion", response_model=MealScanResponse)
@@ -960,14 +1027,66 @@ async def search_foods(
 async def log_meal(payload: MealLogCreate, current_user: dict = Depends(get_current_user)):
     from app.routers.gamification import process_user_activity
 
+    user_id = str(current_user["_id"])
+
+    # Prevent accidental duplicate log of same scan
+    if payload.scan_id:
+        existing = await meals_collection.find_one({"user_id": user_id, "scan_id": payload.scan_id})
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail="This scanned meal has already been logged to your diary."
+            )
+
     doc = payload.model_dump()
-    doc["user_id"] = str(current_user["_id"])
+    doc["user_id"] = user_id
     result = await meals_collection.insert_one(doc)
 
-    gamification_res = await process_user_activity(str(current_user["_id"]), "meal")
+    gamification_res = await process_user_activity(user_id, "meal")
 
     return {
         "id": str(result.inserted_id),
+        "gamification": gamification_res.model_dump(),
+    }
+
+
+@router.post("/meals/batch", status_code=201)
+async def log_meals_batch(payload: MealBatchLogCreate, current_user: dict = Depends(get_current_user)):
+    from app.routers.gamification import process_user_activity
+
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="No meal items provided to log.")
+
+    user_id = str(current_user["_id"])
+
+    # Prevent duplicate logging of same scan
+    if payload.scan_id:
+        existing = await meals_collection.find_one({"user_id": user_id, "scan_id": payload.scan_id})
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail="This scanned meal has already been logged to your diary."
+            )
+
+    docs = []
+    for it in payload.items:
+        doc = it.model_dump()
+        doc["user_id"] = user_id
+        if payload.scan_id:
+            doc["scan_id"] = payload.scan_id
+        if not doc.get("source"):
+            doc["source"] = "image_scan"
+        docs.append(doc)
+
+    result = await meals_collection.insert_many(docs)
+    inserted_ids = [str(_id) for _id in result.inserted_ids]
+
+    gamification_res = await process_user_activity(user_id, "meal")
+
+    return {
+        "success": True,
+        "logged_count": len(inserted_ids),
+        "ids": inserted_ids,
         "gamification": gamification_res.model_dump(),
     }
 
@@ -982,7 +1101,7 @@ async def today_meals(current_user: dict = Depends(get_current_user)):
     ).to_list(length=100)
 
     formatted_meals = []
-    totals = {"calories": 0, "protein_g": 0.0, "carbs_g": 0.0, "fat_g": 0.0, "fiber_g": 0.0}
+    totals = {"calories": 0, "protein_g": 0.0, "carbs_g": 0.0, "fat_g": 0.0, "fiber_g": 0.0, "sugar_g": 0.0}
     for meal in docs:
         meal["_id"] = str(meal["_id"])
         formatted_meals.append(meal)
@@ -991,6 +1110,7 @@ async def today_meals(current_user: dict = Depends(get_current_user)):
         totals["carbs_g"] += meal.get("carbs_g", 0)
         totals["fat_g"] += meal.get("fat_g", 0)
         totals["fiber_g"] += meal.get("fiber_g", 0)
+        totals["sugar_g"] += meal.get("sugar_g", 0)
 
     return {"meals": formatted_meals, "totals": totals}
 

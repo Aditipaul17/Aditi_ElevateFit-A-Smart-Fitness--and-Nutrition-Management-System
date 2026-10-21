@@ -305,7 +305,7 @@ export function ExerciseTracker({
         <div className="flex items-center gap-3 self-end sm:self-auto">
           <div className="text-right">
             <span className="text-[10px] uppercase font-bold tracking-wider text-ink-muted block">
-              Today's Sets
+              Today&apos;s Sets
             </span>
             <span className="text-sm font-bold text-primary">
               {completedSetsCount} completed

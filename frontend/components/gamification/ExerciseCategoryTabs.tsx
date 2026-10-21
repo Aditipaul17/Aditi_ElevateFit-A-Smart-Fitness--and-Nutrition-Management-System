@@ -310,7 +310,7 @@ export function ExerciseCategoryTabs({ onXpAwarded }: ExerciseCategoryTabsProps)
         {filteredExercises.length === 0 && (
           <div className="text-center py-12 bg-white dark:bg-card-dark rounded-2xl border border-black/5 dark:border-white/5">
             <p className="text-ink-muted text-sm">
-              No exercises found matching "{searchQuery}".
+              No exercises found matching &quot;{searchQuery}&quot;.
             </p>
             <button
               onClick={() => {

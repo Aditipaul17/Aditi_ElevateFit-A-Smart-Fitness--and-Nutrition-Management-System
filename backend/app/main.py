@@ -11,13 +11,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.database import users_collection
-from app.routers import ai_coach, analytics, auth, gamification, nutrition, workouts
+from app.routers import ai_coach, analytics, auth, bicep_curls, gamification, nutrition, workouts
 
 app = FastAPI(title=settings.app_name)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -25,6 +26,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(workouts.router)
+app.include_router(bicep_curls.router)
 app.include_router(nutrition.router)
 app.include_router(ai_coach.router)
 app.include_router(analytics.router)

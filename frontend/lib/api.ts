@@ -930,6 +930,139 @@ export async function fetchRecentWorkoutSummaries(token: string): Promise<Workou
   return body as WorkoutSummaryItem[];
 }
 
+export interface BicepCurlRepLog {
+  rep: number;
+  timestamp: string;
+  angle?: number;
+  arm?: string;
+}
+
+export interface BicepCurlSessionPayload {
+  title?: string;
+  reps: number;
+  sets?: number;
+  duration_seconds: number;
+  calories?: number;
+  arm?: string;
+  form_accuracy?: number;
+  avg_angle_min?: number;
+  avg_angle_max?: number;
+  rep_logs?: BicepCurlRepLog[];
+  notes?: string;
+}
+
+export interface BicepCurlSessionRecord {
+  id: string;
+  title: string;
+  reps: number;
+  sets: number;
+  duration_seconds: number;
+  duration_minutes: number;
+  calories: number;
+  arm: string;
+  form_accuracy: number;
+  rep_logs: BicepCurlRepLog[];
+  date: string;
+}
+
+export interface BicepCurlStats {
+  total_sessions: number;
+  total_reps: number;
+  total_calories: number;
+  total_duration_minutes: number;
+  best_session_reps: number;
+}
+
+export async function saveBicepCurlSession(
+  token: string,
+  payload: BicepCurlSessionPayload
+): Promise<{ id: string; message: string; session: any; gamification?: any }> {
+  const res = await safeFetch(`${API_BASE_URL}/bicep-curls/sessions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not save AI bicep curl session."), res.status);
+  }
+  return body as { id: string; message: string; session: any; gamification?: any };
+}
+
+export async function fetchBicepCurlHistory(
+  token: string,
+  limit: number = 20
+): Promise<BicepCurlSessionRecord[]> {
+  const res = await safeFetch(`${API_BASE_URL}/bicep-curls/sessions?limit=${limit}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not load bicep curl history."), res.status);
+  }
+  return body as BicepCurlSessionRecord[];
+}
+
+export async function fetchBicepCurlStats(token: string): Promise<BicepCurlStats> {
+  const res = await safeFetch(`${API_BASE_URL}/bicep-curls/stats`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not load bicep curl stats."), res.status);
+  }
+  return body as BicepCurlStats;
+}
+
+export interface NutritionBenchmarkData {
+  model_name: string;
+  backbone: string;
+  training_epochs: number;
+  validation_accuracy: number;
+  weighted_f1_score: number;
+  classes_supported: string[];
+  nutrition5k_protocol_results: {
+    plates_evaluated: number;
+    overall: {
+      kcal_mae: number;
+      kcal_mape_percent: number;
+      protein_mae_g: number;
+      protein_mape_percent: number;
+      carb_mae_g: number;
+      carb_mape_percent: number;
+      fat_mae_g: number;
+      fat_mape_percent: number;
+    };
+    class_correct: {
+      sample_count: number;
+      accuracy_percent: number;
+      kcal_mae: number;
+      kcal_mape_percent: number;
+      protein_mae_g: number;
+      protein_mape_percent: number;
+      carb_mae_g: number;
+      carb_mape_percent: number;
+      fat_mae_g: number;
+      fat_mape_percent: number;
+    };
+  };
+  ground_truth_databases: string[];
+  documented_limitations: string[];
+}
+
+export async function fetchNutritionBenchmark(): Promise<NutritionBenchmarkData> {
+  const res = await safeFetch(`${API_BASE_URL}/nutrition/benchmark-eval`);
+  const body = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new ApiError(extractErrorMessage(body, "Could not load nutrition benchmark data."), res.status);
+  }
+  return body as NutritionBenchmarkData;
+}
+
+
 
 
 

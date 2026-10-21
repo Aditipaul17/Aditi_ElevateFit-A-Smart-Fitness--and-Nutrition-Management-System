@@ -46,4 +46,6 @@ dist/
 # Generated TypeScript build info
 *.tsbuildinfo
 
-*.tsbuildinfo
+# Scratch and temporary scripts
+scratch/
+

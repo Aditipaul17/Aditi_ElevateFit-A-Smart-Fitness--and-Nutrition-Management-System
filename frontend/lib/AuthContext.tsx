@@ -79,6 +79,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const applyToken = useCallback(async (accessToken: string) => {
+    // Clear any residual caches from previous sessions so a new user starts fresh
+    const keysToRemove = [
+      "elevatefit_real_steps_today",
+      "elevatefit_cached_recent_sessions",
+      "elevatefit_real_weekly_history",
+      "elevatefit_local_food_diary",
+      "elevatefit_pedometer_last_date",
+    ];
+    keysToRemove.forEach((k) => window.localStorage.removeItem(k));
     window.localStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
     setToken(accessToken);
     const me = await fetchCurrentUser(accessToken);
@@ -169,6 +178,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    const keysToRemove = [
+      "elevatefit_real_steps_today",
+      "elevatefit_cached_recent_sessions",
+      "elevatefit_real_weekly_history",
+      "elevatefit_local_food_diary",
+      "elevatefit_pedometer_last_date",
+    ];
+    keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+    Object.keys(window.localStorage).forEach((key) => {
+      if (key.startsWith("elevatefit_")) {
+        window.localStorage.removeItem(key);
+      }
+    });
     setToken(null);
     setUser(null);
   }, []);

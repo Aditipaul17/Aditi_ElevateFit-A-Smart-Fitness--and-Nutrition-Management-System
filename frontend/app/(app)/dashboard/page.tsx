@@ -124,27 +124,11 @@ export default function DashboardPage() {
       setStepGoal(parseInt(savedGoal, 10) || 10000);
     }
 
-    // 3. Local steps
-    if (didReset) {
-      setTodaySteps(0);
-      window.localStorage.setItem("elevatefit_real_steps_today", "0");
-    } else {
-      const cached = window.localStorage.getItem("elevatefit_real_steps_today");
-      if (cached) {
-        setTodaySteps(parseInt(cached, 10) || 0);
-      }
-    }
-
-    // 4. Local recent workout sessions
-    const cachedSessions = window.localStorage.getItem("elevatefit_cached_recent_sessions");
-    if (cachedSessions) {
-      try {
-        const parsed = JSON.parse(cachedSessions);
-        if (Array.isArray(parsed)) setRecentWorkouts(parsed);
-      } catch {}
-    }
+    // Clean up any legacy un-scoped storage
+    window.localStorage.removeItem("elevatefit_real_steps_today");
 
     if (!token) {
+      setTodaySteps(0);
       setGamificationLoading(false);
       return;
     }
@@ -158,17 +142,19 @@ export default function DashboardPage() {
       .catch(() => {})
       .finally(() => setGamificationLoading(false));
 
+    // Fetch user-specific steps directly from MongoDB for this account
     fetchTodaySteps(token)
       .then((res) => {
         if (typeof res?.steps === "number") {
-          setTodaySteps((prev) => {
-            const resolved = Math.max(prev, res.steps);
-            window.localStorage.setItem("elevatefit_real_steps_today", String(resolved));
-            return resolved;
-          });
+          setTodaySteps(res.steps);
+          if (user?.id) {
+            window.localStorage.setItem(`elevatefit_${user.id}_real_steps_today`, String(res.steps));
+          }
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setTodaySteps(0);
+      });
 
     fetchRecentWorkoutSummaries(token)
       .then((data) => {

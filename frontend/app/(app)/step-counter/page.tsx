@@ -77,33 +77,24 @@ export default function StepCounterPage() {
   // Chart Metric Filter
   const [chartMetric, setChartMetric] = useState<"steps" | "kcal" | "min">("steps");
 
+  // Scope storage key to current user so new users never inherit old steps
+  const userStepsKey = user?.id ? `elevatefit_${user.id}_real_steps_today` : null;
+
   // 1. Initial Load: Restore from LocalStorage or Backend API with Daily Reset check
   const loadInitialData = useCallback(async () => {
     setIsLoading(true);
-    let loadedSteps = 0;
-    let loadedGoal = 10000;
+
+    // Clean up any legacy un-scoped localStorage key
+    window.localStorage.removeItem(STORAGE_KEY_TODAY);
 
     // Check midnight rollover / daily reset
     const { didReset } = checkDailyReset();
 
     // Restore saved step goal
     const savedGoal = window.localStorage.getItem(STORAGE_KEY_GOAL);
-    if (savedGoal) loadedGoal = parseInt(savedGoal, 10) || 10000;
+    const loadedGoal = savedGoal ? (parseInt(savedGoal, 10) || 10000) : 10000;
     setStepGoal(loadedGoal);
     setGoalInput(String(loadedGoal));
-
-    // Restore cached steps from local storage (or 0 if reset occurred)
-    if (didReset) {
-      window.localStorage.setItem(STORAGE_KEY_TODAY, "0");
-      loadedSteps = 0;
-      setTodaySteps(0);
-    } else {
-      const cachedSteps = window.localStorage.getItem(STORAGE_KEY_TODAY);
-      if (cachedSteps) {
-        loadedSteps = parseInt(cachedSteps, 10) || 0;
-        setTodaySteps(loadedSteps);
-      }
-    }
 
     // Default 7-day fallback based on real current date
     const today = new Date();
@@ -119,67 +110,57 @@ export default function StepCounterPage() {
       fallbackHistory.push({
         date: dateStr,
         day: dayName,
-        steps: isToday ? loadedSteps : 0,
-        kcal: Math.round((isToday ? loadedSteps : 0) * 0.045),
-        min: Math.round((isToday ? loadedSteps : 0) * 0.005),
+        steps: 0,
+        kcal: 0,
+        min: 0,
         is_today: isToday,
       });
     }
 
-    // Restore cached weekly history if present
-    const cachedWeekly = window.localStorage.getItem(STORAGE_KEY_WEEKLY);
-    if (cachedWeekly) {
-      try {
-        const parsed = JSON.parse(cachedWeekly);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setWeeklyHistory(parsed);
-        } else {
-          setWeeklyHistory(fallbackHistory);
-        }
-      } catch {
-        setWeeklyHistory(fallbackHistory);
-      }
-    } else {
-      setWeeklyHistory(fallbackHistory);
-    }
-
-    // Restore cached recent sessions
-    const cachedSessions = window.localStorage.getItem(STORAGE_KEY_RECENT_SESSIONS);
-    if (cachedSessions) {
-      try {
-        const parsed = JSON.parse(cachedSessions);
-        if (Array.isArray(parsed)) setRecentSessions(parsed);
-      } catch {}
-    }
-
-    // Try sync with API if logged in
+    // When logged in, the user's account in MongoDB is the single source of truth
     if (token) {
       try {
         const todayData = await fetchTodaySteps(token);
-        if (todayData && typeof todayData.steps === "number") {
-          // If local steps were greater, keep the higher value to avoid data loss
-          const resolvedSteps = Math.max(loadedSteps, todayData.steps);
-          setTodaySteps(resolvedSteps);
-          window.localStorage.setItem(STORAGE_KEY_TODAY, String(resolvedSteps));
+        const serverSteps = (todayData && typeof todayData.steps === "number") ? todayData.steps : 0;
+        setTodaySteps(serverSteps);
+        if (userStepsKey) {
+          window.localStorage.setItem(userStepsKey, String(serverSteps));
         }
 
         const weeklyData = await fetchWeeklySteps(token);
         if (Array.isArray(weeklyData) && weeklyData.length > 0) {
           setWeeklyHistory(weeklyData);
-          window.localStorage.setItem(STORAGE_KEY_WEEKLY, JSON.stringify(weeklyData));
+        } else {
+          setWeeklyHistory(
+            fallbackHistory.map((item) =>
+              item.is_today
+                ? {
+                    ...item,
+                    steps: serverSteps,
+                    kcal: Math.round(serverSteps * 0.045),
+                    min: Math.round(serverSteps * 0.005),
+                  }
+                : item
+            )
+          );
         }
 
         const sessions = await fetchRecentWorkoutSummaries(token);
         if (Array.isArray(sessions)) {
           setRecentSessions(sessions);
-          window.localStorage.setItem(STORAGE_KEY_RECENT_SESSIONS, JSON.stringify(sessions));
         }
       } catch (err) {
-        console.warn("Using offline step storage:", err);
+        console.warn("Could not sync step data with backend:", err);
+        setTodaySteps(0);
+        setWeeklyHistory(fallbackHistory);
       }
+    } else {
+      // Unauthenticated visitor: start at 0
+      setTodaySteps(0);
+      setWeeklyHistory(fallbackHistory);
     }
     setIsLoading(false);
-  }, [token]);
+  }, [token, user?.id, userStepsKey]);
 
   useEffect(() => {
     loadInitialData();
@@ -195,7 +176,9 @@ export default function StepCounterPage() {
 
       setTodaySteps((prev) => {
         const nextTotal = prev + addedCount;
-        window.localStorage.setItem(STORAGE_KEY_TODAY, String(nextTotal));
+        if (userStepsKey) {
+          window.localStorage.setItem(userStepsKey, String(nextTotal));
+        }
 
         // Update today's bar in weekly history graph
         setWeeklyHistory((oldHistory) => {

@@ -1070,3 +1070,34 @@ export async function fetchNutritionBenchmark(): Promise<NutritionBenchmarkData>
 
 
 
+
+
+export async function downloadFitnessReport(token: string): Promise<void> {
+  const res = await safeFetch(`${API_BASE_URL}/analytics/fitness-report/download`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const errorBody = await parseJsonSafe(res);
+    throw new ApiError(
+      extractErrorMessage(errorBody, "Failed to download fitness report. Please try again."),
+      res.status
+    );
+  }
+  const blob = await res.blob();
+  const contentDisposition = res.headers.get("content-disposition");
+  let filename = "ElevateFit_Fitness_Report.pdf";
+  if (contentDisposition) {
+    const match = contentDisposition.match(/filename="?([^";]+)"?/);
+    if (match && match[1]) {
+      filename = match[1];
+    }
+  }
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}

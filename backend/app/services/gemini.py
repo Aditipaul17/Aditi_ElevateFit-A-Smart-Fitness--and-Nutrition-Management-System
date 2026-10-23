@@ -197,7 +197,7 @@ async def generate_coaching_response(
         )
 
         # Try gemini-3.6-flash first, then fallback models
-        models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest"]
+        models = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"]
         last_exc = None
         for m in models:
             try:
@@ -220,6 +220,7 @@ async def generate_coaching_response(
 
 async def _call_ai_raw(api_key: str, user_prompt: str, max_tokens: int = 1024, json_mode: bool = False) -> str:
     """Internal helper to execute a simple prompt on Groq or Gemini."""
+    import asyncio
     system_instruction = "You are ElevateFit AI, an expert fitness & nutrition assistant. Be concise, precise, and return structured JSON when requested."
     if api_key.startswith("gsk_"):
         return await _generate_groq_response(
@@ -227,6 +228,10 @@ async def _call_ai_raw(api_key: str, user_prompt: str, max_tokens: int = 1024, j
             system_instruction=system_instruction,
             user_prompt=user_prompt,
         )
+
+    # Valid Google AI Studio Gemini API keys start with "AIzaSy"
+    if not (api_key.startswith("AIzaSy") or api_key.startswith("AQ.")):
+        raise RuntimeError("Non-standard or unconfigured Gemini key")
 
     client = genai.Client(api_key=api_key)
     config_kwargs = {
@@ -238,15 +243,22 @@ async def _call_ai_raw(api_key: str, user_prompt: str, max_tokens: int = 1024, j
         config_kwargs["response_mime_type"] = "application/json"
 
     config = types.GenerateContentConfig(**config_kwargs)
-    models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest"]
-    for m in models:
-        try:
-            res = client.models.generate_content(model=m, contents=user_prompt, config=config)
-            if res and res.text:
-                return res.text.strip()
-        except Exception:
-            continue
-    raise RuntimeError("Gemini call returned empty response.")
+
+    def _call_gemini():
+        for m in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"]:
+            try:
+                res = client.models.generate_content(model=m, contents=user_prompt, config=config)
+                if res and res.text:
+                    return res.text.strip()
+            except Exception:
+                continue
+        return None
+
+    # Enforce strict 2.0s non-blocking timeout
+    res = await asyncio.wait_for(asyncio.to_thread(_call_gemini), timeout=2.0)
+    if not res:
+        raise RuntimeError("Gemini call returned empty response.")
+    return res
 
 
 async def generate_youtube_search_query(user_profile: Dict[str, Any]) -> str:
@@ -361,10 +373,12 @@ async def analyze_meal_image_with_ai(
     from ml.nutrition_vision.dataset_builder import INDIAN_NUTRITION_DB, calculate_food_nutrition, FOOD_ALTERNATIVES_MAP
     from ml.nutrition_vision.macro_estimator import detect_multiple_foods_from_image
 
-    # 1. Cloud Multimodal: Gemini Vision if configured
+    # 1. Cloud Multimodal: Gemini Vision if configured with a valid Google AI Studio key
     api_key = (settings.gemini_api_key or "").strip()
-    if api_key and not api_key.startswith("gsk_"):
+    # Valid Google AI Studio Gemini keys start with "AIzaSy"
+    if api_key and (api_key.startswith("AIzaSy") or api_key.startswith("AQ.")):
         try:
+            import asyncio
             client = genai.Client(api_key=api_key)
             prompt = (
                 "You are an expert clinical nutrition and food recognition AI.\n"
@@ -413,126 +427,125 @@ async def analyze_meal_image_with_ai(
                 max_output_tokens=800,
             )
 
-            models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"]
-            for m in models:
-                try:
-                    res = client.models.generate_content(model=m, contents=contents, config=config)
-                    if res and res.text:
-                        raw = res.text.strip()
-                        if "```" in raw:
-                            raw = raw.split("```")[1]
-                            if raw.startswith("json"):
-                                raw = raw[4:]
-                        parsed = json.loads(raw.strip())
+            def _call_gemini_vision():
+                for m in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"]:
+                    try:
+                        return client.models.generate_content(model=m, contents=contents, config=config)
+                    except Exception as exc:
+                        logger.warning(f"Gemini vision model {m} call failed: {exc}")
+                return None
 
-                        if not parsed.get("is_food", True):
-                            return {
-                                "is_food": False,
-                                "error": parsed.get("error", "No recognizable food items found in this image."),
-                                "detected_items": [],
-                            }
+            # Enforce 2.5s strict timeout so users never wait on cloud latency
+            res = await asyncio.wait_for(asyncio.to_thread(_call_gemini_vision), timeout=2.5)
 
-                        raw_items = parsed.get("detected_items", [])
-                        if not raw_items:
-                            return {
-                                "is_food": False,
-                                "error": "No recognizable food items could be separated in this image.",
-                                "detected_items": [],
-                            }
+            if res and res.text:
+                raw = res.text.strip()
+                if "```" in raw:
+                    raw = raw.split("```")[1]
+                    if raw.startswith("json"):
+                        raw = raw[4:]
+                parsed = json.loads(raw.strip())
 
-                        processed_items = []
-                        total_cals = 0
-                        total_prot = 0.0
-                        total_carbs = 0.0
-                        total_fat = 0.0
-                        total_fiber = 0.0
-                        total_sugar = 0.0
+                if not parsed.get("is_food", True):
+                    return {
+                        "is_food": False,
+                        "error": parsed.get("error", "No recognizable food items found in this image."),
+                        "detected_items": [],
+                    }
 
-                        for idx, it in enumerate(raw_items):
-                            cls = it.get("class_label", "dal")
-                            item_mult = float(it.get("portion_multiplier", 1.0)) * portion_multiplier
+                raw_items = parsed.get("detected_items", [])
+                if raw_items:
+                    processed_items = []
+                    total_cals = 0
+                    total_prot = 0.0
+                    total_carbs = 0.0
+                    total_fat = 0.0
+                    total_fiber = 0.0
+                    total_sugar = 0.0
 
-                            if cls in INDIAN_NUTRITION_DB:
-                                nutr = calculate_food_nutrition(cls, portion_multiplier=item_mult)
-                                item_cals = nutr["calories"]
-                                item_prot = nutr["protein_g"]
-                                item_carbs = nutr["carbs_g"]
-                                item_fat = nutr["fat_g"]
-                                item_fiber = nutr["fiber_g"]
-                                item_sugar = nutr.get("sugar_g", 0.0)
-                                item_portion = it.get("portion_size") or nutr["portion_size"]
-                                item_weight = it.get("weight_g") or nutr["weight_g"]
-                            else:
-                                # Fallback calculation from standard rates
-                                item_cals = int(round(it.get("calories", 150) * item_mult))
-                                item_prot = round(float(it.get("protein_g", 6.0)) * item_mult, 1)
-                                item_carbs = round(float(it.get("carbs_g", 25.0)) * item_mult, 1)
-                                item_fat = round(float(it.get("fat_g", 4.0)) * item_mult, 1)
-                                item_fiber = round(float(it.get("fiber_g", 2.0)) * item_mult, 1)
-                                item_sugar = round(float(it.get("sugar_g", 1.0)) * item_mult, 1)
-                                item_portion = it.get("portion_size", f"{item_mult:.1f}x portion")
-                                item_weight = float(it.get("weight_g", 100)) * item_mult
+                    for idx, it in enumerate(raw_items):
+                        cls = it.get("class_label", "dal")
+                        item_mult = float(it.get("portion_multiplier", 1.0)) * portion_multiplier
 
-                            alts = []
-                            for alt in it.get("alternatives", FOOD_ALTERNATIVES_MAP.get(cls, [])):
-                                alts.append({"name": str(alt), "class_label": cls})
+                        if cls in INDIAN_NUTRITION_DB:
+                            nutr = calculate_food_nutrition(cls, portion_multiplier=item_mult)
+                            item_cals = nutr["calories"]
+                            item_prot = nutr["protein_g"]
+                            item_carbs = nutr["carbs_g"]
+                            item_fat = nutr["fat_g"]
+                            item_fiber = nutr["fiber_g"]
+                            item_sugar = nutr.get("sugar_g", 0.0)
+                            item_portion = it.get("portion_size") or nutr["portion_size"]
+                            item_weight = it.get("weight_g") or nutr["weight_g"]
+                        else:
+                            # Fallback calculation from standard rates
+                            item_cals = int(round(it.get("calories", 150) * item_mult))
+                            item_prot = round(float(it.get("protein_g", 6.0)) * item_mult, 1)
+                            item_carbs = round(float(it.get("carbs_g", 25.0)) * item_mult, 1)
+                            item_fat = round(float(it.get("fat_g", 4.0)) * item_mult, 1)
+                            item_fiber = round(float(it.get("fiber_g", 2.0)) * item_mult, 1)
+                            item_sugar = round(float(it.get("sugar_g", 1.0)) * item_mult, 1)
+                            item_portion = it.get("portion_size", f"{item_mult:.1f}x portion")
+                            item_weight = float(it.get("weight_g", 100)) * item_mult
 
-                            scanned_item = {
-                                "id": f"scanned_item_{idx + 1}",
-                                "name": it.get("name", cls.replace("_", " ").title()),
-                                "class_label": cls,
-                                "portion_size": item_portion,
-                                "portion_multiplier": item_mult,
-                                "weight_g": float(item_weight),
-                                "calories": item_cals,
-                                "protein_g": item_prot,
-                                "carbs_g": item_carbs,
-                                "fat_g": item_fat,
-                                "fiber_g": item_fiber,
-                                "sugar_g": item_sugar,
-                                "confidence": float(it.get("confidence", 0.92)),
-                                "uncertain": bool(it.get("uncertain", False)),
-                                "uncertainty_note": it.get("uncertainty_note"),
-                                "alternatives": alts,
-                                "reliable_source": "ICMR IFCT 2024 & USDA FoodData Central",
-                            }
-                            processed_items.append(scanned_item)
+                        alts = []
+                        for alt in it.get("alternatives", FOOD_ALTERNATIVES_MAP.get(cls, [])):
+                            alts.append({"name": str(alt), "class_label": cls})
 
-                            total_cals += item_cals
-                            total_prot += item_prot
-                            total_carbs += item_carbs
-                            total_fat += item_fat
-                            total_fiber += item_fiber
-                            total_sugar += item_sugar
-
-                        avg_conf = (
-                            sum(it["confidence"] for it in processed_items) / len(processed_items)
-                            if processed_items
-                            else 0.90
-                        )
-
-                        return {
-                            "is_food": True,
-                            "food_name": str(parsed.get("food_name", "Scanned Meal")),
-                            "portion_size": str(parsed.get("portion_size", "Combined plate")),
-                            "calories": total_cals,
-                            "protein_g": round(total_prot, 1),
-                            "carbs_g": round(total_carbs, 1),
-                            "fat_g": round(total_fat, 1),
-                            "fiber_g": round(total_fiber, 1),
-                            "sugar_g": round(total_sugar, 1),
-                            "confidence": round(avg_conf, 2),
-                            "breakdown": str(parsed.get("breakdown", "Vision model identification")),
+                        scanned_item = {
+                            "id": f"scanned_item_{idx + 1}",
+                            "name": it.get("name", cls.replace("_", " ").title()),
+                            "class_label": cls,
+                            "portion_size": item_portion,
+                            "portion_multiplier": item_mult,
+                            "weight_g": float(item_weight),
+                            "calories": item_cals,
+                            "protein_g": item_prot,
+                            "carbs_g": item_carbs,
+                            "fat_g": item_fat,
+                            "fiber_g": item_fiber,
+                            "sugar_g": item_sugar,
+                            "confidence": float(it.get("confidence", 0.92)),
+                            "uncertain": bool(it.get("uncertain", False)),
+                            "uncertainty_note": it.get("uncertainty_note"),
+                            "alternatives": alts,
                             "reliable_source": "ICMR IFCT 2024 & USDA FoodData Central",
-                            "class_label": processed_items[0]["class_label"] if len(processed_items) == 1 else "thali",
-                            "portion_multiplier": portion_multiplier,
-                            "detected_items": processed_items,
-                            "vision_provider": "gemini_vision",
                         }
-                except Exception as e:
-                    logger.warning(f"Gemini vision model {m} call failed: {e}")
+                        processed_items.append(scanned_item)
+
+                        total_cals += item_cals
+                        total_prot += item_prot
+                        total_carbs += item_carbs
+                        total_fat += item_fat
+                        total_fiber += item_fiber
+                        total_sugar += item_sugar
+
+                    avg_conf = (
+                        sum(it["confidence"] for it in processed_items) / len(processed_items)
+                        if processed_items
+                        else 0.90
+                    )
+
+                    return {
+                        "is_food": True,
+                        "food_name": str(parsed.get("food_name", "Scanned Meal")),
+                        "portion_size": str(parsed.get("portion_size", "Combined plate")),
+                        "calories": total_cals,
+                        "protein_g": round(total_prot, 1),
+                        "carbs_g": round(total_carbs, 1),
+                        "fat_g": round(total_fat, 1),
+                        "fiber_g": round(total_fiber, 1),
+                        "sugar_g": round(total_sugar, 1),
+                        "confidence": round(avg_conf, 2),
+                        "breakdown": str(parsed.get("breakdown", "Vision model identification")),
+                        "reliable_source": "ICMR IFCT 2024 & USDA FoodData Central",
+                        "class_label": processed_items[0]["class_label"] if len(processed_items) == 1 else "thali",
+                        "portion_multiplier": portion_multiplier,
+                        "detected_items": processed_items,
+                        "vision_provider": "gemini_vision",
+                    }
         except Exception as e:
-            logger.warning(f"Gemini vision API error: {e}. Falling back to local computer vision.")
+            logger.info(f"Gemini vision skipped/unavailable ({e}). Using ultra-fast local CV engine.")
 
     # 2. Local Computer Vision Engine (Multi-Region Spatial Analysis)
     # Validated strictly against ICMR IFCT (Indian Food Composition Tables) & USDA FoodData Central

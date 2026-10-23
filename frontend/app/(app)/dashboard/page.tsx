@@ -16,6 +16,8 @@ import {
   Footprints,
   SlidersHorizontal,
   CheckCircle2,
+  FileText,
+  Loader2,
   History,
   Play,
 } from "lucide-react";
@@ -32,6 +34,7 @@ import {
   fetchTodaySteps,
   syncTotalSteps,
   fetchRecentWorkoutSummaries,
+  downloadFitnessReport,
   WorkoutSummaryItem,
   GamificationData,
 } from "@/lib/api";
@@ -82,6 +85,21 @@ export default function DashboardPage() {
   const [showStepModal, setShowStepModal] = useState<boolean>(false);
   const [stepsInput, setStepsInput] = useState<string>("1000");
   const [recentWorkouts, setRecentWorkouts] = useState<WorkoutSummaryItem[]>([]);
+  const [isDownloadingReport, setIsDownloadingReport] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+
+  const handleDownloadReport = async () => {
+    if (!token) return;
+    setIsDownloadingReport(true);
+    setReportError(null);
+    try {
+      await downloadFitnessReport(token);
+    } catch (err: any) {
+      setReportError(err?.message || "Failed to download fitness report.");
+    } finally {
+      setIsDownloadingReport(false);
+    }
+  };
 
   // Onboarding Modal state
   const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
@@ -219,12 +237,29 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <button
-            onClick={() => setShowOnboarding(true)}
-            className="flex items-center gap-2 rounded-xl bg-primary/10 text-primary border border-primary/20 px-4 py-2.5 text-xs font-semibold hover:bg-primary hover:text-white transition-colors"
-          >
-            <SlidersHorizontal size={15} /> Retake Questionnaire
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleDownloadReport}
+              disabled={isDownloadingReport}
+              className="flex items-center gap-2 rounded-xl bg-primary text-white px-4 py-2.5 text-xs font-semibold hover:bg-primary-hover transition-colors shadow-sm disabled:opacity-60 cursor-pointer"
+            >
+              {isDownloadingReport ? (
+                <>
+                  <Loader2 size={15} className="animate-spin" /> Generating Report...
+                </>
+              ) : (
+                <>
+                  <FileText size={15} /> Download My Fitness Report
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => setShowOnboarding(true)}
+              className="flex items-center gap-2 rounded-xl bg-primary/10 text-primary border border-primary/20 px-4 py-2.5 text-xs font-semibold hover:bg-primary hover:text-white transition-colors"
+            >
+              <SlidersHorizontal size={15} /> Retake Questionnaire
+            </button>
+          </div>
         </motion.div>
 
         {/* Stats row */}

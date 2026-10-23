@@ -12,6 +12,7 @@ import {
   Scale,
   Plus,
   CheckCircle2,
+  FileText,
 } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { Card } from "@/components/ui/Card";
@@ -30,6 +31,7 @@ import {
   AnalyticsSummary,
   fetchAnalytics,
   logWeightCheckin,
+  downloadFitnessReport,
   ApiError,
 } from "@/lib/api";
 
@@ -38,6 +40,27 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Download Report state
+  const [isDownloadingReport, setIsDownloadingReport] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  const handleDownloadReport = async () => {
+    if (!token) return;
+    setIsDownloadingReport(true);
+    setDownloadError(null);
+    try {
+      await downloadFitnessReport(token);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setDownloadError(err.message);
+      } else {
+        setDownloadError("Failed to generate and download fitness report.");
+      }
+    } finally {
+      setIsDownloadingReport(false);
+    }
+  };
 
   // Weekly Weight Check-in state
   const [weightInput, setWeightInput] = useState("");
@@ -120,14 +143,40 @@ export default function AnalyticsPage() {
     <>
       <Topbar placeholder="Search metrics..." />
       <main className="px-6 lg:px-10 py-8 space-y-6">
-        <div>
-          <h1 className="text-3xl font-display font-bold text-ink dark:text-white">
-            Analytics
-          </h1>
-          <p className="text-ink-muted mt-1">
-            Track your progress across real activity, nutrition, and body metrics.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-display font-bold text-ink dark:text-white">
+              Analytics
+            </h1>
+            <p className="text-ink-muted mt-1">
+              Track your progress across real activity, nutrition, and body metrics.
+            </p>
+          </div>
+          <button
+            onClick={handleDownloadReport}
+            disabled={isDownloadingReport}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm text-white bg-primary hover:bg-primary-hover active:scale-[0.98] shadow-sm shadow-primary/20 transition-all disabled:opacity-60 cursor-pointer"
+          >
+            {isDownloadingReport ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                <span>Generating Report...</span>
+              </>
+            ) : (
+              <>
+                <FileText size={16} />
+                <span>Download My Fitness Report</span>
+              </>
+            )}
+          </button>
         </div>
+
+        {downloadError && (
+          <div className="flex items-center gap-2 rounded-xl bg-error/10 text-error text-sm px-4 py-3 border border-error/20">
+            <AlertCircle size={18} className="shrink-0" />
+            <span>{downloadError}</span>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-center gap-2 rounded-xl bg-error/10 text-error text-sm px-4 py-3 border border-error/20">

@@ -10,7 +10,7 @@ ElevateFit is a comprehensive, AI-powered health and fitness platform that helps
 ### 🔐 Authentication & Profile Management
 - User registration and JWT-based authentication
 - Secure password hashing with bcrypt
-- User profile personalization (fitness goals, target calories, activity level)
+- User profile personalization (age, gender, height, weight, fitness goals, target calories, activity level, dietary preferences, physical limitations)
 
 ### 🏋️ Workouts & Exercise
 - Browse and filter workout plans by category, duration, and difficulty
@@ -38,6 +38,15 @@ ElevateFit is a comprehensive, AI-powered health and fitness platform that helps
 - Visual charts and trends for workout consistency, calorie burn, and nutrition compliance
 - Historical workout and nutrition summary breakdowns
 
+### 📄 Download My Fitness Report (PDF)
+- **Comprehensive PDF Export**: Generates a downloadable clinical-style PDF report summarizing:
+  - **Athlete Profile & Biometrics**: Name, age, gender, height, weight, calculated BMI & classification, fitness goal, activity level, dietary preference, and equipment.
+  - **Nutrition & Calorie Intake**: Daily breakdown tables (daily calories, protein, carbs, fats, logged meals count) and chronological meal logs.
+  - **Exercise & Workout Activity**: Completed sessions, categories, active durations, calories burned, volume/reps, and cumulative totals.
+  - **Daily Step Logs**: Recorded steps, walking distance, and estimated calorie expenditure.
+- **Strictly Factual AI Executive Summary**: Objective synthesis of recorded user data, volume, and daily totals powered by Gemini (with automated deterministic fallback). **Strictly restricted to recorded data—no speculative advice, recommendations, or unverified claims.**
+- **One-Click Download**: Accessible directly from both the **Dashboard** and **Analytics** pages.
+
 ---
 
 ## Tech Stack
@@ -46,6 +55,7 @@ ElevateFit is a comprehensive, AI-powered health and fitness platform that helps
 |---|---|
 | **Frontend** | Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS, Framer Motion, Lucide Icons |
 | **Backend** | FastAPI, Python 3.10+, Uvicorn, Pydantic |
+| **PDF Generation** | ReportLab (clinical typography, dynamic multi-page numbering, tables) |
 | **Database** | MongoDB (Motor async driver) |
 | **AI / LLMs** | Google Gemini API, Groq Cloud API |
 | **Computer Vision** | MediaPipe (Pose estimation & joint angle tracking) |
@@ -59,14 +69,14 @@ ElevateFit is a comprehensive, AI-powered health and fitness platform that helps
 |---|---|
 | `/` | Landing page highlighting core features and entry points |
 | `/login` & `/signup` | User authentication and account creation |
-| `/dashboard` | User overview: daily summary, active streaks, quick actions |
+| `/dashboard` | User overview: daily summary, active streaks, quick actions & **Download Fitness Report** |
 | `/workouts` | Workout library, personalized generation, and active session player |
 | `/step-counter` | Step tracking, daily goal progress, and activity stats |
 | `/nutrition` | Daily meal logger, macro targets, and nutrition history |
 | `/nutrition-analyzer` | AI-assisted meal photo analysis and nutritional estimation |
 | `/ai-coach` | Interactive AI chat for personalized training and diet guidance |
 | `/gamification` | User levels, badges, streaks, and achievement status |
-| `/analytics` | Workout volume, calorie trends, and health progress graphs |
+| `/analytics` | Workout volume, calorie trends, health progress graphs & **Download Fitness Report** |
 | `/settings` | Profile preferences, goals, and account settings |
 
 ---
@@ -79,6 +89,7 @@ Interactive Swagger API documentation is available at `http://localhost:8000/doc
 - `POST /auth/register` — Register a new account
 - `POST /auth/login` — Log in and receive JWT token
 - `GET /auth/me` — Retrieve current authenticated user profile
+- `PATCH /auth/me` — Update user profile details and baseline biometrics
 
 ### Workouts
 - `GET /workouts` — List available workouts
@@ -92,11 +103,14 @@ Interactive Swagger API documentation is available at `http://localhost:8000/doc
 - `POST /nutrition/analyze` — AI food vision analysis
 
 ### AI Coach
-- `POST /ai-coach/chat` — Conversational fitness guidance via Gemini / Groq
+- `POST /ai-coach/message` — Conversational fitness guidance via Gemini / Groq
+- `GET /ai-coach/history` — Retrieve previous coaching conversation sessions
 
 ### Gamification & Analytics
 - `GET /gamification/profile` — User level, XP, badges, and streaks
 - `GET /analytics/summary` — Performance summaries and aggregate statistics
+- `POST /analytics/weight-checkin` — Log periodic body weight progression
+- `GET /analytics/fitness-report/download` — **Generate and download comprehensive PDF fitness & nutrition report**
 
 ---
 
@@ -166,19 +180,19 @@ Frontend will be available at `http://localhost:3000`.
 
 ```
 ElevateFit/
-├── frontend/             # Next.js 14 App Router frontend
-│   ├── app/              # Routes: dashboard, workouts, nutrition, coach, etc.
-│   ├── components/       # Reusable UI, modals, navigation, and charts
-│   ├── lib/              # API clients, auth context, and utilities
-│   └── public/           # Static assets and icons
-├── backend/              # FastAPI Python backend
+├── frontend/                 # Next.js 14 App Router frontend
+│   ├── app/                  # Routes: dashboard, analytics, workouts, nutrition, coach, etc.
+│   ├── components/           # Reusable UI, modals, navigation, and charts
+│   ├── lib/                  # API client (downloadFitnessReport), auth context, and utilities
+│   └── public/               # Static assets and icons
+├── backend/                  # FastAPI Python backend
 │   ├── app/
-│   │   ├── routers/      # API route controllers (auth, workouts, nutrition, coach)
-│   │   ├── models/       # Pydantic schemas and database models
-│   │   ├── services/     # AI integration (Gemini, Groq) and business logic
-│   │   └── database.py   # MongoDB connection and indexing
-│   └── requirements.txt  # Python backend dependencies
-├── ml/                   # Machine learning and computer vision modules
+│   │   ├── routers/          # API route controllers (analytics, auth, workouts, nutrition, coach)
+│   │   ├── models/           # Pydantic schemas and database models
+│   │   ├── services/         # ReportLab PDF generator (fitness_report.py), AI service (gemini.py)
+│   │   └── database.py       # MongoDB connection and indexing
+│   └── requirements.txt      # Python backend dependencies (ReportLab, FastAPI, Motor, etc.)
+├── ml/                       # Machine learning, pose estimation, and food vision modules
 └── README.md
 ```
 

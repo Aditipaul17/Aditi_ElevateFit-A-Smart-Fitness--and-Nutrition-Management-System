@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 
-from app.database import meals_collection, users_collection, workouts_collection, workout_logs_collection
+from app.database import meals_collection, users_collection, workouts_collection, workout_logs_collection, step_logs_collection
+from app.services.fitness_report import generate_fitness_report_pdf, generate_ai_factual_summary, build_fallback_summary
 from app.routers.auth import get_current_user
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -189,3 +190,104 @@ async def log_weight_checkin(
         weight_trend=trend_points,
     )
 
+
+
+@router.get("/fitness-report/download")
+async def download_fitness_report_pdf(current_user: dict = Depends(get_current_user)):
+    """
+    Generates and downloads a complete fitness & nutrition report PDF
+    containing user biometrics, logged meals, exercise logs, daily totals,
+    and a strictly factual AI summary of recorded history.
+    """
+    user_id = str(current_user["_id"])
+    now = datetime.now(timezone.utc)
+
+    # 1. Fetch user records from MongoDB
+    meals = await meals_collection.find({"user_id": user_id}).sort("logged_at", -1).to_list(length=500)
+    workouts = await workout_logs_collection.find({"user_id": user_id}).sort("logged_at", -1).to_list(length=500)
+    steps = await step_logs_collection.find({"user_id": user_id}).sort("date", -1).to_list(length=100)
+
+    # 2. Compute statistics for summary context
+    daily_meals_set = set()
+    total_cals = 0
+    total_protein = 0.0
+    total_carbs = 0.0
+    total_fat = 0.0
+    for m in meals:
+        total_cals += int(m.get("calories") or 0)
+        total_protein += float(m.get("protein_g") or 0.0)
+        total_carbs += float(m.get("carbs_g") or 0.0)
+        total_fat += float(m.get("fat_g") or 0.0)
+        d_str = str(m.get("logged_at") or m.get("date") or "")[:10]
+        if d_str:
+            daily_meals_set.add(d_str)
+
+    days_logged = max(1, len(daily_meals_set))
+    avg_cals = round(total_cals / days_logged) if meals else 0
+
+    total_workout_mins = sum(int(w.get("duration_minutes") or 0) for w in workouts)
+    total_burn = sum(int(w.get("calories") or w.get("calories_burned") or 0) for w in workouts)
+    total_steps = sum(int(s.get("steps") or 0) for s in steps)
+
+    nutrition_stats = {
+        "total_meals": len(meals),
+        "total_calories": total_cals,
+        "avg_daily_calories": avg_cals,
+        "total_protein": total_protein,
+        "total_carbs": total_carbs,
+        "total_fat": total_fat,
+        "days_logged": len(daily_meals_set),
+    }
+    workout_stats = {
+        "total_workouts": len(workouts),
+        "total_minutes": total_workout_mins,
+        "total_calories_burned": total_burn,
+    }
+    step_stats = {
+        "total_steps": total_steps,
+    }
+
+    # 3. Create context for AI summary
+    name_str = current_user.get("name") or "Athlete"
+    goal_str = current_user.get("fitness_goal") or "Not set"
+    activity_str = current_user.get("activity_level") or "Not set"
+    diet_str = current_user.get("dietary_preference") or "Not set"
+
+    context = (
+        f"Athlete: {name_str}\n"
+        f"Profile: Age {current_user.get('age', 'N/A')}, Gender {current_user.get('gender', 'N/A')}, "
+        f"Height {current_user.get('height', 'N/A')} cm, Weight {current_user.get('weight', 'N/A')} kg, "
+        f"Goal: {goal_str}, Activity: {activity_str}, Diet: {diet_str}\n"
+        f"Nutrition Recorded: {len(meals)} logged meals across {len(daily_meals_set)} days. "
+        f"Total calories: {total_cals:,} kcal, Daily average: {avg_cals:,} kcal. "
+        f"Macronutrients: {total_protein:.1f}g protein, {total_carbs:.1f}g carbs, {total_fat:.1f}g fat.\n"
+        f"Exercise Recorded: {len(workouts)} completed workout sessions. "
+        f"Total duration: {total_workout_mins} active minutes, Total calories burned: {total_burn:,} kcal.\n"
+        f"Steps Recorded: {total_steps:,} cumulative steps."
+    )
+
+    ai_summary = await generate_ai_factual_summary(context)
+    if not ai_summary or len(ai_summary.strip()) < 20:
+        ai_summary = build_fallback_summary(current_user, nutrition_stats, workout_stats, step_stats)
+
+    # 4. Generate PDF bytes
+    pdf_bytes = generate_fitness_report_pdf(
+        profile=current_user,
+        meals=meals,
+        workouts=workouts,
+        steps=steps,
+        ai_summary=ai_summary,
+    )
+
+    safe_name = "".join(c if c.isalnum() else "_" for c in name_str).strip("_") or "Athlete"
+    date_tag = now.strftime("%Y%m%d")
+    filename = f"ElevateFit_Report_{safe_name}_{date_tag}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )

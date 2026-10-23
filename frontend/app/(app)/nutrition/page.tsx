@@ -328,15 +328,42 @@ export default function NutritionPage() {
   const [fat, setFat] = useState("");
 
   const loadMealsAndTargets = useCallback(() => {
+    let localMeals: any[] = [];
+    try {
+      const stored = window.localStorage.getItem("elevatefit_local_food_diary");
+      if (stored) localMeals = JSON.parse(stored);
+    } catch {}
+
     if (!token) {
       setLoading(false);
+      if (localMeals.length > 0) {
+        setLoggedMeals(localMeals);
+        const totals = localMeals.reduce(
+          (acc: any, m: any) => ({
+            calories: acc.calories + (m.calories || 0),
+            protein_g: Math.round((acc.protein_g + (m.protein_g || 0)) * 10) / 10,
+            carbs_g: Math.round((acc.carbs_g + (m.carbs_g || 0)) * 10) / 10,
+            fat_g: Math.round((acc.fat_g + (m.fat_g || 0)) * 10) / 10,
+            fiber_g: Math.round((acc.fiber_g + (m.fiber_g || 0)) * 10) / 10,
+          }),
+          { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 }
+        );
+        setLoggedTotals(totals);
+      }
       return;
     }
     setLoading(true);
 
     Promise.all([fetchTodayMeals(token), fetchNutritionRecommendations(token)])
       .then(([todayRes, recsRes]) => {
-        setLoggedMeals(todayRes.meals || []);
+        const backendMeals = todayRes.meals || [];
+        const combined = [...backendMeals];
+        for (const lm of localMeals) {
+          if (!combined.some((bm: any) => bm._id === lm._id || (bm.name === lm.name && bm.calories === lm.calories))) {
+            combined.push(lm);
+          }
+        }
+        setLoggedMeals(combined);
         setLoggedTotals({
           calories: todayRes.totals?.calories || 0,
           protein_g: Math.round(todayRes.totals?.protein_g || 0),
@@ -716,9 +743,18 @@ export default function NutritionPage() {
   };
 
   const handleDeleteMeal = async (mealId: string) => {
-    if (!token || !mealId) return;
+    if (!mealId) return;
     try {
-      await deleteMeal(token, mealId);
+      if (token && !mealId.startsWith("meal_")) {
+        await deleteMeal(token, mealId);
+      }
+      try {
+        const stored = window.localStorage.getItem("elevatefit_local_food_diary");
+        if (stored) {
+          const list = JSON.parse(stored).filter((m: any) => m._id !== mealId);
+          window.localStorage.setItem("elevatefit_local_food_diary", JSON.stringify(list));
+        }
+      } catch {}
       setSuccessMsg("Meal removed from diary.");
       loadMealsAndTargets();
       setTimeout(() => setSuccessMsg(null), 3000);
@@ -892,18 +928,7 @@ export default function NutritionPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                setImagePreview(null);
-                setSelectedFile(null);
-                setScannedResult(null);
-                setCameraError(null);
-                setShowScanModal(true);
-              }}
-              className="flex items-center gap-2 rounded-xl border border-primary/40 bg-primary/10 text-primary hover:bg-primary hover:text-white px-4 py-2.5 text-sm font-semibold transition-all shadow-sm"
-            >
-              <Camera size={18} /> Scan Your Meal
-            </button>
+
             <button
               onClick={() => {
                 setName("");
@@ -1140,7 +1165,7 @@ export default function NutritionPage() {
 
           {loggedMeals.length === 0 ? (
             <p className="text-sm text-ink-muted">
-              No meals logged today yet. Click &quot;Scan Your Meal&quot; or &quot;Log Meal&quot; above to track!
+              No meals logged today yet. Click &quot;Log Meal&quot; above or use the AI Food Analyzer to track!
             </p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
@@ -1221,145 +1246,39 @@ export default function NutritionPage() {
           </div>
         </Card>
 
-        {/* Nutritionist / Verified Guidance Section */}
-        <Card className="space-y-4 border border-primary/20 bg-emerald-950/10 dark:bg-card-dark">
-          <div className="flex items-center justify-between">
+        {/* Daily Nutrition Standards & Targets */}
+        <Card className="p-4 sm:p-5 border border-primary/20 bg-primary/5 dark:bg-card-dark">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
-                <ShieldCheck size={22} />
+              <div className="p-2 rounded-xl bg-primary/10 text-primary shrink-0">
+                <ShieldCheck size={20} />
               </div>
               <div>
-                <h2 className="text-lg font-display font-semibold text-ink dark:text-white flex items-center gap-2">
-                  Verified Guidance & Evidence-Based Science
-                  <span className="text-[10px] font-bold bg-primary text-white px-2 py-0.5 rounded-full uppercase tracking-wider">
-                    ICMR-NIN & WHO
+                <h3 className="text-sm font-semibold text-ink dark:text-white flex items-center gap-2">
+                  Daily Nutrition Targets
+                  <span className="text-[10px] font-bold bg-primary/15 text-primary px-2 py-0.5 rounded-full">
+                    ICMR & WHO Aligned
                   </span>
-                </h2>
-                <p className="text-xs text-ink-muted mt-0.5">
-                  Scientific nutrition standards tailored to your body metrics and daily energy expenditure
+                </h3>
+                <p className="text-xs text-ink-muted">
+                  Personalized standards tailored to your {user?.fitness_goal || "fitness"} goal
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setShowGuidanceDetails(!showGuidanceDetails)}
-              className="text-xs font-semibold text-primary flex items-center gap-1 hover:underline"
-            >
-              {showGuidanceDetails ? (
-                <>
-                  Hide Details <ChevronUp size={14} />
-                </>
-              ) : (
-                <>
-                  View Guidelines <ChevronDown size={14} />
-                </>
-              )}
-            </button>
+
+            {/* Quick target badges */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-surface-dark border border-black/5 dark:border-white/10 font-medium">
+                Protein: <strong className="text-primary">{userMetricsSummary.protein_per_kg || "1.8 g/kg"}</strong>
+              </span>
+              <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-surface-dark border border-black/5 dark:border-white/10 font-medium">
+                Fiber: <strong className="text-primary">{userMetricsSummary.fiber_target || "30g/day"}</strong>
+              </span>
+              <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-surface-dark border border-black/5 dark:border-white/10 font-medium">
+                Water: <strong className="text-primary">{userMetricsSummary.recommended_water || "3.0 L/day"}</strong>
+              </span>
+            </div>
           </div>
-
-          <AnimatePresence>
-            {showGuidanceDetails && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                className="space-y-4 pt-2 border-t border-black/5 dark:border-white/10"
-              >
-                {/* Verified Reference Sources Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  {(evidenceSources.length > 0
-                    ? evidenceSources
-                    : [
-                        {
-                          name: "ICMR-NIN Dietary Guidelines (2024)",
-                          authority: "Indian Council of Medical Research - NIN",
-                          summary:
-                            "Recommends 50-56% complex carbs, 10-15% protein (0.83-2.0g/kg based on activity), 20-30% healthy fats, min 30g dietary fiber, and a 3:1 cereal-pulse ratio.",
-                          reference_url: "https://www.nin.res.in/dietaryguidelines/",
-                        },
-                        {
-                          name: "WHO Healthy Diet Standards",
-                          authority: "World Health Organization",
-                          summary:
-                            "Advises total fat intake <30% of energy, free sugars <5-10%, salt <5g/day, and at least 400g of fruits & vegetables per day.",
-                          reference_url: "https://www.who.int/news-room/fact-sheets/detail/healthy-diet",
-                        },
-                        {
-                          name: "ICMR IFCT & USDA Database",
-                          authority: "Indian Food Composition Tables & USDA",
-                          summary:
-                            "Validated nutritional composition reference for accurate macronutrient and micronutrient tracking.",
-                          reference_url: "https://fdc.nal.usda.gov/",
-                        },
-                      ]
-                  ).map((src, idx) => (
-                    <div
-                      key={idx}
-                      className="rounded-xl border border-black/10 dark:border-white/10 p-3.5 bg-white dark:bg-card-dark flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <h3 className="text-xs font-bold text-ink dark:text-white flex items-center gap-1.5">
-                            <BookOpen size={13} className="text-primary" /> {src.name}
-                          </h3>
-                        </div>
-                        <p className="text-[11px] font-semibold text-primary mb-1.5">{src.authority}</p>
-                        <p className="text-xs text-ink-muted leading-relaxed">{src.summary}</p>
-                      </div>
-                      {src.reference_url && (
-                        <a
-                          href={src.reference_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-2 pt-2 border-t border-black/5 dark:border-white/5 text-[11px] text-primary hover:underline inline-flex items-center gap-1 font-semibold"
-                        >
-                          View Official Document <ExternalLink size={11} />
-                        </a>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Guidance Notes & Metrics Summary */}
-                <div className="rounded-xl bg-primary/5 border border-primary/10 p-4 space-y-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
-                    <Award size={14} /> Nutritionist Tailored Recommendations
-                  </h3>
-                  <div className="space-y-2">
-                    {(guidanceNotes.length > 0
-                      ? guidanceNotes
-                      : [
-                          `Goal-Based Target: Formulated based on your '${user?.fitness_goal || "Maintain fitness"}' goal following ICMR-NIN recommendations.`,
-                          "Cereal-to-Pulse Synergy: Combine grains and lentils in a 3:1 ratio for a complete amino acid profile.",
-                          "Fiber & Hydration: Maintain 30g+ dietary fiber and 2.5 - 3.5L daily hydration.",
-                        ]
-                    ).map((note, i) => (
-                      <div key={i} className="flex items-start gap-2 text-xs text-ink dark:text-gray-200">
-                        <span className="text-primary font-bold mt-0.5">•</span>
-                        <span>{note}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Summary Metric Pills */}
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-primary/10">
-                    <span className="text-[11px] font-semibold bg-white dark:bg-card-dark text-ink dark:text-white px-3 py-1 rounded-lg border border-black/5 dark:border-white/10">
-                      Target Protein: <strong className="text-primary">{userMetricsSummary.protein_per_kg || "1.8 g/kg"}</strong>
-                    </span>
-                    <span className="text-[11px] font-semibold bg-white dark:bg-card-dark text-ink dark:text-white px-3 py-1 rounded-lg border border-black/5 dark:border-white/10">
-                      Target Fiber: <strong className="text-primary">{userMetricsSummary.fiber_target || "30 g/day"}</strong>
-                    </span>
-                    <span className="text-[11px] font-semibold bg-white dark:bg-card-dark text-ink dark:text-white px-3 py-1 rounded-lg border border-black/5 dark:border-white/10">
-                      Hydration: <strong className="text-primary">{userMetricsSummary.recommended_water || "3.0 L/day"}</strong>
-                    </span>
-                    <span className="text-[11px] font-semibold bg-white dark:bg-card-dark text-ink dark:text-white px-3 py-1 rounded-lg border border-black/5 dark:border-white/10">
-                      Amino Synergy: <strong className="text-primary">{userMetricsSummary.cereal_pulse_ratio || "3:1 Ratio"}</strong>
-                    </span>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </Card>
       </main>
 

@@ -5,8 +5,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 const LINKS = [
   { href: "#features", label: "Features" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#testimonials", label: "Stories" },
+
+
 ];
 
 export function MarketingNav() {

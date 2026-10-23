@@ -12,7 +12,7 @@ import {
   Trophy,
   Settings,
   LogOut,
-  Camera,
+
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -22,7 +22,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
   { href: "/step-counter", label: "Step Counter", icon: Footprints },
   { href: "/workouts", label: "Workouts", icon: Dumbbell },
-  { href: "/bicep-curls", label: "AI Curl Counter", icon: Camera },
+
   { href: "/nutrition", label: "Nutrition", icon: UtensilsCrossed },
   { href: "/nutrition-analyzer", label: "AI Food Analyzer", icon: Sparkles },
   { href: "/ai-coach", label: "AI Coach", icon: BotMessageSquare },

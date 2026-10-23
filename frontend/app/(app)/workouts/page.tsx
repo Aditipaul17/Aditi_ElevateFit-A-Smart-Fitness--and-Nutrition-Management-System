@@ -19,7 +19,7 @@ import {
   Flame,
   Target,
   Trophy,
-  Camera,
+
 } from "lucide-react";
 import Link from "next/link";
 import { Topbar } from "@/components/Topbar";
@@ -291,14 +291,6 @@ export default function WorkoutsPage() {
                 <RotateCw size={15} />
                 <span>Generate New Workout</span>
               </button>
-
-              <Link
-                href="/bicep-curls"
-                className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-primary/10 hover:bg-primary/20 text-primary border border-primary/25 text-xs font-bold transition-all shadow-sm"
-              >
-                <Camera size={15} />
-                <span>AI Curl Counter</span>
-              </Link>
 
               {activePlan && activePlan.exercises.length > 0 && (
                 <button

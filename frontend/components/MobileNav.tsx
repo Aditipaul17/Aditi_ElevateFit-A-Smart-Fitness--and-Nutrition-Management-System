@@ -11,7 +11,7 @@ import {
   LineChart,
   Trophy,
   Settings,
-  Camera,
+
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
   { href: "/step-counter", label: "Steps", icon: Footprints },
   { href: "/workouts", label: "Workouts", icon: Dumbbell },
-  { href: "/bicep-curls", label: "AI Curls", icon: Camera },
+
   { href: "/nutrition", label: "Nutrition", icon: UtensilsCrossed },
   { href: "/nutrition-analyzer", label: "Food AI", icon: Sparkles },
   { href: "/gamification", label: "Gamify", icon: Trophy },

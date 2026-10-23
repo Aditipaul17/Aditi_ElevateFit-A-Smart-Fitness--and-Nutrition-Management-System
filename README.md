@@ -1,23 +1,42 @@
 # ElevateFit
 **A Smart Fitness and Nutrition Management System**
 
-ElevateFit helps users track workouts, log meals, monitor progress, and get personalized fitness guidance. Built with a Next.js frontend, a FastAPI backend, and an ML module for pose detection and coaching.
-
-Frontend pages currently run on mock data; the backend auth, workout, and nutrition APIs are functional but not yet wired to the frontend.
+ElevateFit is a comprehensive, AI-powered health and fitness platform that helps users personalize workouts, analyze nutrition, monitor progress, and receive intelligent coaching. Built with a Next.js 14 frontend, a FastAPI backend, MongoDB, and integrated AI services (Google Gemini & Groq).
 
 ---
 
 ## Features
 
-**Authentication (backend)**
-- Register, login (JWT), get current user
-- Password hashing with bcrypt
+### 🔐 Authentication & Profile Management
+- User registration and JWT-based authentication
+- Secure password hashing with bcrypt
+- User profile personalization (fitness goals, target calories, activity level)
 
-**Dashboard, Workouts, Nutrition, Analytics, Settings**
-- Fully built responsive pages, currently backed by mock data
-- Workouts & nutrition also have working backend APIs (list/get/favorite workouts, log meals, view today's meals)
+### 🏋️ Workouts & Exercise
+- Browse and filter workout plans by category, duration, and difficulty
+- YouTube workout recommendations integration
+- Active workout session tracking with live metrics
+- AI Pose Tracker modal for real-time exercise rep counting (e.g., Squats & Form feedback)
 
-**AI Coach** — 🚧 Planned / In Development. Page exists; backend endpoint is a placeholder, not yet functional.
+### 🥗 Nutrition & Meal Tracking
+- Log daily meals (Breakfast, Lunch, Dinner, Snacks) with macronutrient breakdown
+- Real-time daily calorie and macro progress tracking against personalized goals
+- **AI Food Analyzer**: Image-based meal analysis powered by Google Gemini vision models
+
+### 🤖 AI Coach
+- Interactive fitness and nutrition assistant powered by Gemini & Groq LLMs
+- Context-aware advice tailored to user metrics, workout history, and diet goals
+
+### 👣 Step Counter & Activity
+- Daily step tracking with milestone celebrations and calorie burn estimation
+
+### 🏆 Gamification & Motivation
+- Experience points (XP), streak tracking, level progression, and unlockable achievement badges
+- Leaderboards and interactive workout milestones
+
+### 📊 Analytics & Insights
+- Visual charts and trends for workout consistency, calorie burn, and nutrition compliance
+- Historical workout and nutrition summary breakdowns
 
 ---
 
@@ -25,61 +44,121 @@ Frontend pages currently run on mock data; the backend auth, workout, and nutrit
 
 | Layer | Stack |
 |---|---|
-| Frontend | Next.js 14, React, TypeScript, Tailwind CSS |
-| Backend | FastAPI, Python |
-| Database | MongoDB |
-| Auth | JWT, bcrypt |
-| ML/CV | Pose detection (working demo); nutrition vision & coaching engine (scaffolds) |
-
-No AI/LLM (e.g. Gemini) integration is implemented yet.
-
----
-
-## Architecture
-
-```
-User → Next.js Frontend → FastAPI Backend → MongoDB
-```
-
-`ml/` runs independently for now and will connect to the backend as it matures.
+| **Frontend** | Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS, Framer Motion, Lucide Icons |
+| **Backend** | FastAPI, Python 3.10+, Uvicorn, Pydantic |
+| **Database** | MongoDB (Motor async driver) |
+| **AI / LLMs** | Google Gemini API, Groq Cloud API |
+| **Computer Vision** | MediaPipe (Pose estimation & joint angle tracking) |
+| **Auth** | JWT (JSON Web Tokens), Bcrypt |
 
 ---
 
 ## Application Pages
 
-| Page | Status |
+| Route | Description |
 |---|---|
-| Landing (`/`) | ✅ Completed |
-| Dashboard (`/dashboard`) | ✅ Completed |
-| Workouts (`/workouts`) | ✅ Completed |
-| Nutrition (`/nutrition`) | ✅ Completed |
-| AI Coach (`/ai-coach`) | 🚧 In Development |
-| Analytics (`/analytics`) | ✅ Completed |
-| Settings (`/settings`) | ✅ Completed |
+| `/` | Landing page highlighting core features and entry points |
+| `/login` & `/signup` | User authentication and account creation |
+| `/dashboard` | User overview: daily summary, active streaks, quick actions |
+| `/workouts` | Workout library, personalized generation, and active session player |
+| `/step-counter` | Step tracking, daily goal progress, and activity stats |
+| `/nutrition` | Daily meal logger, macro targets, and nutrition history |
+| `/nutrition-analyzer` | AI-assisted meal photo analysis and nutritional estimation |
+| `/ai-coach` | Interactive AI chat for personalized training and diet guidance |
+| `/gamification` | User levels, badges, streaks, and achievement status |
+| `/analytics` | Workout volume, calorie trends, and health progress graphs |
+| `/settings` | Profile preferences, goals, and account settings |
 
 ---
 
 ## API Endpoints
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| POST | `/auth/register` | Register a new user |
-| POST | `/auth/login` | Log in, receive JWT |
-| GET | `/auth/me` | Get current user |
-| GET | `/workouts` | List workouts |
-| GET | `/workouts/{id}` | Get a workout |
-| POST | `/workouts/{id}/favorite` | Favorite a workout |
-| POST | `/nutrition/meals` | Log a meal |
-| GET | `/nutrition/meals/today` | Get today's meals |
-| POST | `/ai-coach/message` | AI coach chat (placeholder) |
+Interactive Swagger API documentation is available at `http://localhost:8000/docs`.
 
-Interactive docs: `http://localhost:8000/docs`
+### Authentication
+- `POST /auth/register` — Register a new account
+- `POST /auth/login` — Log in and receive JWT token
+- `GET /auth/me` — Retrieve current authenticated user profile
+
+### Workouts
+- `GET /workouts` — List available workouts
+- `GET /workouts/{id}` — Retrieve specific workout details
+- `POST /workouts/{id}/favorite` — Toggle workout favorite status
+- `GET /workouts/recommendations` — Fetch curated workout recommendations
+
+### Nutrition
+- `POST /nutrition/meals` — Log a meal with nutritional values
+- `GET /nutrition/meals/today` — Retrieve today's logged meals and totals
+- `POST /nutrition/analyze` — AI food vision analysis
+
+### AI Coach
+- `POST /ai-coach/chat` — Conversational fitness guidance via Gemini / Groq
+
+### Gamification & Analytics
+- `GET /gamification/profile` — User level, XP, badges, and streaks
+- `GET /analytics/summary` — Performance summaries and aggregate statistics
 
 ---
 
-## Database
+## Installation & Local Setup
 
-MongoDB is used for persistent storage, covering users, workouts, and nutrition logs. User-specific data is scoped via the JWT issued at login.
+### Prerequisites
+- [Node.js](https://nodejs.org/) (v18 or higher)
+- [Python](https://www.python.org/) (v3.10 or higher)
+- [MongoDB](https://www.mongodb.com/) (running locally or MongoDB Atlas URI)
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/Aditipaul17/Aditi_ElevateFit-A-Smart-Fitness--and-Nutrition-Management-System.git
+cd Aditi_ElevateFit-A-Smart-Fitness--and-Nutrition-Management-System
+```
+
+### 2. Backend Setup
+```bash
+cd backend
+python -m venv .venv
+
+# On Windows:
+.venv\Scripts\activate
+# On macOS/Linux:
+# source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+Configure `backend/.env`:
+```env
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DB_NAME=elevatefit
+JWT_SECRET_KEY=your_secret_key
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+GEMINI_API_KEY=your_gemini_api_key
+GROQ_API_KEY=your_groq_api_key
+YOUTUBE_API_KEY=your_youtube_api_key
+```
+
+Start the FastAPI backend:
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+Backend API will be running at `http://localhost:8000`.
+
+### 3. Frontend Setup
+```bash
+cd ../frontend
+npm install
+```
+
+Configure `frontend/.env.local`:
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+Start the Next.js dev server:
+```bash
+npm run dev
+```
+Frontend will be available at `http://localhost:3000`.
 
 ---
 
@@ -87,76 +166,31 @@ MongoDB is used for persistent storage, covering users, workouts, and nutrition 
 
 ```
 ElevateFit/
-├── frontend/   # Next.js 14 + TypeScript + Tailwind CSS
-├── backend/    # FastAPI + MongoDB
-├── ml/         # Pose detection, nutrition vision, coaching engine
+├── frontend/             # Next.js 14 App Router frontend
+│   ├── app/              # Routes: dashboard, workouts, nutrition, coach, etc.
+│   ├── components/       # Reusable UI, modals, navigation, and charts
+│   ├── lib/              # API clients, auth context, and utilities
+│   └── public/           # Static assets and icons
+├── backend/              # FastAPI Python backend
+│   ├── app/
+│   │   ├── routers/      # API route controllers (auth, workouts, nutrition, coach)
+│   │   ├── models/       # Pydantic schemas and database models
+│   │   ├── services/     # AI integration (Gemini, Groq) and business logic
+│   │   └── database.py   # MongoDB connection and indexing
+│   └── requirements.txt  # Python backend dependencies
+├── ml/                   # Machine learning and computer vision modules
 └── README.md
 ```
 
 ---
 
-## Installation & Setup
-
-**1. Clone**
-```bash
-git clone https://github.com/Aditipaul17/Aditi_ElevateFit-A-Smart-Fitness--and-Nutrition-Management-System.git
-cd Aditi_ElevateFit-A-Smart-Fitness--and-Nutrition-Management-System
-```
-
-**2. Backend**
-```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-copy .env.example .env
-uvicorn app.main:app --reload --port 8000
-```
-
-**3. Environment variables** (`.env`)
-```
-MONGODB_URI=your_mongodb_connection_string
-JWT_SECRET_KEY=your_secret
-```
-
-**4. Frontend**
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Visit `http://localhost:3000`.
-
----
-
-## Authentication Flow
-
-```
-Register → stored in MongoDB → Login → JWT issued → protected API requests
-```
-
----
-
-## Screenshots
-
-Screenshots will be added after the final UI testing phase.
-
----
-
 ## Security
-
-- Bcrypt password hashing
-- JWT-based authentication
-- Secrets via environment variables (not committed)
-- User data scoped to the authenticated JWT
+- Password hashing using `bcrypt`
+- Stateless authentication with signed JWT tokens
+- Secure environment configuration for secrets and API keys
+- Scoped database operations per authenticated user
 
 ---
-
-## Contributors
-
-**Aditi Paul** — [github.com/Aditipaul17](https://github.com/Aditipaul17)
 
 ## License
-
-Not specified
+MIT License

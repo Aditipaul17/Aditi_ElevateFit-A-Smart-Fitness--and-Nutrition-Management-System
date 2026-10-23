@@ -1,9 +1,6 @@
 # ElevateFit
 **A Smart Fitness and Nutrition Management System**
 
-[![Deploy Frontend with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FAditipaul17%2FAditi_ElevateFit-A-Smart-Fitness--and-Nutrition-Management-System&root-directory=frontend&env=NEXT_PUBLIC_API_URL)
-[![Deploy Backend to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Aditipaul17/Aditi_ElevateFit-A-Smart-Fitness--and-Nutrition-Management-System)
-
 ElevateFit is a comprehensive, AI-powered health and fitness platform that helps users personalize workouts, analyze nutrition, monitor progress, and receive intelligent coaching. Built with a Next.js 14 frontend, a FastAPI backend, MongoDB, and integrated AI services (Google Gemini & Groq).
 
 ---
